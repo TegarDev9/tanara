@@ -5,21 +5,54 @@ import {
   TonConnectButton
 } from '@tonconnect/ui-react';
 import { useCallback, useEffect, useState } from 'react';
+import type { User, Subscription } from '@supabase/supabase-js'; // Import User and Subscription type
 
 export default function LoginButton() {
-
-  const wallet = useTonWallet(); 
+  const wallet = useTonWallet();
   const [userSubscription, setUserSubscription] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null); // State to hold Supabase user
+
+  // Effect to listen for auth changes and set the current user
+  useEffect(() => {
+    const getSessionData = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setCurrentUser(session?.user ?? null);
+      console.log('Initial session user:', session?.user);
+    };
+
+    getSessionData();
+
+    // supabase.auth.onAuthStateChange returns an object with a `data` property,
+    // which in turn has a `subscription` property.
+    const authSubscriptionObject = supabase.auth.onAuthStateChange((event, session) => {
+      setCurrentUser(session?.user ?? null);
+      console.log('Auth state changed, new user:', session?.user);
+      if (event === 'SIGNED_OUT') {
+        setUserSubscription(null); // Reset subscription on sign out
+      }
+    });
+
+    // The actual subscription object is inside authSubscriptionObject.data
+    // Explicitly type subscriptionInstance with the imported Subscription type
+    const subscriptionInstance: Subscription = authSubscriptionObject.data.subscription;
+
+    return () => {
+      // Call unsubscribe on the subscription instance
+      subscriptionInstance?.unsubscribe();
+    };
+  }, []);
+
 
   const fetchUserSubscription = useCallback(async (userId: string) => {
     if (!supabase) {
-        console.error('Supabase client is not initialized for fetchUserSubscription.');
-        return null;
+      console.error('Supabase client is not initialized for fetchUserSubscription.');
+      return null;
     }
     const { data, error } = await supabase
       .from('subscriptions')
       .select('status')
       .eq('user_id', userId)
+      .limit(1)
       .single();
 
     if (error) {
@@ -35,64 +68,78 @@ export default function LoginButton() {
       return;
     }
 
-    // Pastikan kita menggunakan 'connectedWallet' dari parameter fungsi ini
+    let supabaseUser = currentUser;
+    if (!supabaseUser) {
+        const { data: { session } } = await supabase.auth.getSession();
+        supabaseUser = session?.user ?? null;
+        if (session?.user) setCurrentUser(session.user);
+    }
+
+    if (!supabaseUser) {
+      console.error("Pengguna Supabase tidak terautentikasi. Tidak dapat melanjutkan login/upsert profil.");
+      if (typeof window !== 'undefined') {
+        window.alert('Sesi pengguna Supabase tidak ditemukan. Pastikan Anda sudah login ke aplikasi atau coba lagi.');
+      }
+      return;
+    }
+
     const userFriendlyAddress = connectedWallet.account.address;
     const chain = connectedWallet.account.chain;
 
-    console.log(`Attempting to upsert user with wallet: ${userFriendlyAddress}, chain: ${chain}`);
+    console.log(`Attempting to upsert profile for user ID: ${supabaseUser.id} with wallet: ${userFriendlyAddress}, chain: ${chain}`);
 
     try {
-      const { data: userData, error: upsertError } = await supabase
-        .from('users')
-        .upsert({
-          wallet_address: userFriendlyAddress,
-          chain: chain,
-          last_login_at: new Date().toISOString(), // Gunakan toISOString() untuk format standar
-        })
-        .select('id, subscription_status') // Pastikan kolom subscription_status ada di tabel users jika Anda ingin mengambilnya di sini
+      const { data: profileData, error: upsertError } = await supabase
+        .from('profiles')
+        .upsert(
+          {
+            id: supabaseUser.id,
+            wallet_address: userFriendlyAddress,
+            chain: chain,
+            last_login_at: new Date().toISOString(),
+            email: supabaseUser.email,
+          },
+          {
+            onConflict: 'id',
+          }
+        )
+        .select('id, subscription_status')
         .single();
 
-      if (upsertError) throw upsertError;
+      if (upsertError) {
+        console.error('Supabase upsert error details:', upsertError);
+        throw upsertError;
+      }
 
-      if (userData) {
-        console.log('User logged in/updated:', userData);
-        // Menggunakan userData.id untuk fetchUserSubscription
-        const subscription = await fetchUserSubscription(userData.id);
+      if (profileData) {
+        console.log('Profile upserted/retrieved:', profileData);
+        const subscription = await fetchUserSubscription(profileData.id);
         setUserSubscription(subscription);
         console.log('User subscription status:', subscription);
 
-        // Logika berdasarkan status langganan
         if (subscription === 'free_with_ads') {
           console.log('User is on free plan with ads. Show ads.');
         } else if (subscription === 'pro') {
           console.log('User is on pro plan. Unlock pro features.');
         }
       } else {
-        console.warn('No user data returned from upsert.');
+        console.warn('No profile data returned from upsert. This might be due to RLS or if the select query returned nothing.');
       }
     } catch (error) {
       console.error('Error during Supabase login/upsert:', error);
-      // Hindari penggunaan alert() di produksi, gunakan sistem notifikasi yang lebih baik
-      // alert('Terjadi kesalahan saat login ke Supabase.');
-      // Untuk sekarang, biarkan agar mudah di-debug
       if (typeof window !== 'undefined') {
-        window.alert('Terjadi kesalahan saat login ke Supabase. Cek konsol untuk detail.');
+        const displayError = error instanceof Error ? error.message : 'Detail tidak diketahui.';
+        window.alert(`Terjadi kesalahan saat login ke Supabase: ${displayError}. Cek konsol untuk detail teknis.`);
       }
     }
-  }, [fetchUserSubscription]); // setUserSubscription tidak perlu di sini karena sudah di dalam scope useCallback
+  }, [fetchUserSubscription, currentUser]);
 
   useEffect(() => {
-    if (wallet) { // 'wallet' dari useTonWallet() digunakan di sini
-      console.log('Wallet connected:', wallet);
-      // Memastikan address dan chain ada sebelum login
-      if (wallet.account && wallet.account.address && wallet.account.chain) {
-        handleSupabaseLogin(wallet); // Meneruskan 'wallet' sebagai 'connectedWallet' ke handleSupabaseLogin
-      } else {
-        console.warn('Wallet object is present, but account details (address/chain) are missing.');
-      }
-    } else {
-      console.log('Wallet not connected yet or disconnected.');
-      // Reset status langganan jika wallet terputus
+    if (wallet && wallet.account && wallet.account.address && wallet.account.chain) {
+      console.log('TON Wallet connected:', wallet);
+      handleSupabaseLogin(wallet);
+    } else if (!wallet) {
+      console.log('TON Wallet not connected yet or disconnected.');
       setUserSubscription(null);
     }
   }, [wallet, handleSupabaseLogin]);
@@ -101,13 +148,16 @@ export default function LoginButton() {
   return (
     <div className="p-4 bg-gray-800 rounded-lg shadow-md">
       <div className="flex justify-center mb-4">
-        <TonConnectButton className="ton-connect-button" /> {/* Anda bisa menambahkan styling kustom jika perlu */}
+        <TonConnectButton className="ton-connect-button" />
       </div>
       {wallet && (
         <div className="mt-4 p-3 bg-gray-700 rounded text-white text-sm break-all">
-          <p className="font-semibold">Connected Wallet:</p>
+          <p className="font-semibold">Connected TON Wallet:</p>
           <p className="mb-1">Address: {wallet.account.address}</p>
           <p>Chain: {wallet.account.chain}</p>
+          {currentUser && (
+            <p className="mt-1 pt-1 border-t border-gray-600 text-xs">Supabase User ID: {currentUser.id}</p>
+          )}
           {userSubscription && <p className="mt-2 pt-2 border-t border-gray-600">Subscription: <span className="font-bold">{userSubscription}</span></p>}
         </div>
       )}
@@ -116,10 +166,9 @@ export default function LoginButton() {
           Anda menggunakan versi gratis dengan iklan.
         </div>
       )}
-       {/* Styling untuk tombol TonConnect jika default tidak sesuai */}
       <style jsx global>{`
         .ton-connect-button button {
-          background-color: #007aff; // Contoh warna biru TON
+          background-color: #007aff;
           color: white;
           padding: 10px 20px;
           border-radius: 8px;
