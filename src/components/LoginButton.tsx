@@ -12,7 +12,7 @@ export default function LoginButton() {
   const [userSubscription, setUserSubscription] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null); // State to hold Supabase user
 
-  // Effect to listen for auth changes and set the current user
+  
   useEffect(() => {
     const getSessionData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -22,8 +22,6 @@ export default function LoginButton() {
 
     getSessionData();
 
-    // supabase.auth.onAuthStateChange returns an object with a `data` property,
-    // which in turn has a `subscription` property.
     const authSubscriptionObject = supabase.auth.onAuthStateChange((event, session) => {
       setCurrentUser(session?.user ?? null);
       console.log('Auth state changed, new user:', session?.user);
@@ -32,12 +30,9 @@ export default function LoginButton() {
       }
     });
 
-    // The actual subscription object is inside authSubscriptionObject.data
-    // Explicitly type subscriptionInstance with the imported Subscription type
     const subscriptionInstance: Subscription = authSubscriptionObject.data.subscription;
 
     return () => {
-      // Call unsubscribe on the subscription instance
       subscriptionInstance?.unsubscribe();
     };
   }, []);
@@ -62,26 +57,15 @@ export default function LoginButton() {
     return data ? data.status : 'free_with_ads';
   }, []);
 
-  const handleSupabaseLogin = useCallback(async (connectedWallet: Wallet) => {
+  // Modified handleSupabaseLogin to accept supabaseUser as a parameter
+  const handleSupabaseLogin = useCallback(async (connectedWallet: Wallet, supabaseUser: User) => {
     if (!supabase) {
       console.error("Supabase client tidak terinisialisasi.");
       return;
     }
 
-    let supabaseUser = currentUser;
-    if (!supabaseUser) {
-        const { data: { session } } = await supabase.auth.getSession();
-        supabaseUser = session?.user ?? null;
-        if (session?.user) setCurrentUser(session.user);
-    }
-
-    if (!supabaseUser) {
-      console.error("Pengguna Supabase tidak terautentikasi. Tidak dapat melanjutkan login/upsert profil.");
-      if (typeof window !== 'undefined') {
-        window.alert('Sesi pengguna Supabase tidak ditemukan. Pastikan Anda sudah login ke aplikasi atau coba lagi.');
-      }
-      return;
-    }
+    // supabaseUser is now passed as a parameter, so it's guaranteed to be non-null here
+    // by the calling useEffect.
 
     const userFriendlyAddress = connectedWallet.account.address;
     const chain = connectedWallet.account.chain;
@@ -93,11 +77,11 @@ export default function LoginButton() {
         .from('profiles')
         .upsert(
           {
-            id: supabaseUser.id,
+            id: supabaseUser.id, // Use the passed supabaseUser
             wallet_address: userFriendlyAddress,
             chain: chain,
             last_login_at: new Date().toISOString(),
-            email: supabaseUser.email,
+            email: supabaseUser.email, // Ensure email is available and you want to save it
           },
           {
             onConflict: 'id',
@@ -132,17 +116,23 @@ export default function LoginButton() {
         window.alert(`Terjadi kesalahan saat login ke Supabase: ${displayError}. Cek konsol untuk detail teknis.`);
       }
     }
-  }, [fetchUserSubscription, currentUser]);
+  // Removed currentUser from useCallback dependencies as it's now a parameter
+  }, [fetchUserSubscription]);
 
+  // Effect to trigger Supabase login when TON wallet connects AND Supabase user is available
   useEffect(() => {
-    if (wallet && wallet.account && wallet.account.address && wallet.account.chain) {
-      console.log('TON Wallet connected:', wallet);
-      handleSupabaseLogin(wallet);
+    if (wallet && wallet.account && wallet.account.address && wallet.account.chain && currentUser) {
+      console.log('TON Wallet connected AND Supabase user available. Proceeding to handleSupabaseLogin.');
+      handleSupabaseLogin(wallet, currentUser); // Pass currentUser directly
     } else if (!wallet) {
       console.log('TON Wallet not connected yet or disconnected.');
-      setUserSubscription(null);
+      setUserSubscription(null); // Reset subscription if TON wallet disconnects
+    } else if (wallet && !currentUser) {
+      console.log('TON Wallet connected, but waiting for Supabase user session...');
+      // Optionally, you could set a loading/waiting state here or inform the user.
+      // For now, it will just wait for currentUser to be populated by the other useEffect.
     }
-  }, [wallet, handleSupabaseLogin]);
+  }, [wallet, currentUser, handleSupabaseLogin]); // Added currentUser to dependencies
 
 
   return (
