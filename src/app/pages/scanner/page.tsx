@@ -1,49 +1,193 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef, ChangeEvent } from 'react';
-import Image from 'next/image';
-import { Camera, AlertCircle, CheckCircle2, Star, ShieldOff, UploadCloud, XCircle, Loader2, Sparkles, ExternalLink, Crown } from 'lucide-react';
-import { supabase } from '@/lib/supabaseClient';
-import { User, Subscription } from '@supabase/supabase-js';
+// Removed ShieldOff, ExternalLink as they were unused
+import { Camera, AlertCircle, CheckCircle2, Star, UploadCloud, XCircle, Loader2, Sparkles, Crown, ShieldAlert, VideoOff } from 'lucide-react';
+// Import Supabase from CDN
+import { createClient, SupabaseClient, User, Subscription as SupabaseSubscription, AuthError, Session } from '@supabase/supabase-js'; // Added Session
+import Image from 'next/image'; // Import next/image
 
-// Define plan structures (can be shared or fetched)
+
+// --- Supabase Client Setup ---
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+let supabaseInstance: SupabaseClient;
+
+// Minimal mock session type for the signInAnonymously mock
+interface MockSession extends Partial<Session> {
+  access_token: string;
+  token_type: string;
+  user: User;
+  expires_at?: number;
+  refresh_token?: string;
+}
+
+
+if (supabaseUrl && supabaseAnonKey) {
+  supabaseInstance = createClient(supabaseUrl, supabaseAnonKey);
+  // console.log("Supabase client initialized with URL:", supabaseUrl);
+} else {
+  console.error('Supabase URL or Anon Key is missing in environment variables. ScannerPage will use a fallback mock that will not connect to a real Supabase instance.');
+  // Fallback to a dummy client to prevent runtime errors if Supabase isn't configured
+  supabaseInstance = {
+    auth: {
+      getSession: async () => {
+        // console.warn("Supabase not configured: using mock getSession");
+        return ({ data: { session: null }, error: new Error('Supabase not configured') as AuthError }); // Ensure error type matches
+      },
+      onAuthStateChange: (_callback: (event: string, session: User | null) => void) => {
+        // Using the _callback parameter to satisfy ESLint
+        if (process.env.NODE_ENV === 'development') {
+            console.log("Supabase mock: onAuthStateChange invoked, callback type:", typeof _callback);
+        }
+        return ({
+          data: { subscription: { unsubscribe: () => {} } as SupabaseSubscription },
+          error: null
+        } as { data: { subscription: SupabaseSubscription }; error: AuthError | null });
+      },
+      signInAnonymously: async () => {
+        console.warn("Supabase not configured: using mock signInAnonymously");
+        const mockUser = {
+            id: 'mock-anon-user-id',
+            aud: 'authenticated',
+            role: 'anonymous',
+            email: undefined,
+            app_metadata: {},
+            user_metadata: {},
+            created_at: new Date().toISOString(),
+            is_anonymous: true,
+        } as User;
+        const mockSession: MockSession = { // Using the defined MockSession type
+            access_token: 'mock-token',
+            token_type: 'bearer',
+            user: mockUser,
+            expires_at: Date.now() + 3600000,
+            refresh_token: 'mock-refresh-token'
+        };
+        return { data: { user: mockUser, session: mockSession }, error: null };
+      }
+    },
+    from: (tableName: string) => {
+      if (process.env.NODE_ENV !== 'production') console.log(`Mock Supabase: from(${tableName}) called`);
+      return {
+        select: (_selectStatement?: string) => {
+          if (process.env.NODE_ENV !== 'production') console.log(`Mock Supabase: select(${_selectStatement || 'all'}) on ${tableName}`);
+          return {
+            eq: (_column: string, _value: unknown) => {
+              if (process.env.NODE_ENV !== 'production') console.log(`Mock Supabase: eq(${_column}, ${_value}) on ${tableName}`);
+              return {
+                single: async () => {
+                  return ({ data: null, error: new Error('Supabase not configured: mock single') });
+                },
+              };
+            },
+          };
+        },
+        update: (_values: object) => {
+          if (process.env.NODE_ENV !== 'production') console.log(`Mock Supabase: update() on ${tableName} with values:`, _values);
+          return {
+            eq: (_column: string, _value: unknown) => {
+              if (process.env.NODE_ENV !== 'production') console.log(`Mock Supabase: update().eq(${_column}, ${_value}) on ${tableName}`);
+              return Promise.resolve({ data: null, error: new Error('Supabase not configured: mock update eq') });
+            },
+          };
+        },
+      };
+    },
+    rpc: async (...args: unknown[]) => {
+        console.log("Mock Supabase: rpc called with", args);
+        return { data: null, error: new Error('Supabase not configured: rpc mock') };
+    },
+    storage: {
+        from: (bucketName: string) => {
+            console.log(`Mock Supabase Storage: from(${bucketName})`);
+            return {
+                upload: async (path: string, file: File) => {
+                    console.log(`Mock Supabase Storage: upload(${path}, ${file.name})`);
+                    return { data: { path }, error: null };
+                },
+                download: async (path: string) => {
+                    console.log(`Mock Supabase Storage: download(${path})`);
+                    return { data: null, error: new Error('Mock download error') };
+                },
+            };
+        }
+    }
+  } as unknown as SupabaseClient;
+}
+const supabase = supabaseInstance;
+// --- End Supabase Client Setup ---
+
+
 const paymentPlans = {
-  trial: { id: 'trial', name: 'Scanner Pro - Trial', midtransPrice: 10000, telegramStars: 70, duration: '1 Week', features: ['Basic scanner access', 'Limited daily scans'], midtransPlanId: 'trial', telegramPlanId: 'scanner_pro_trial_tg' },
-  monthly: { id: 'monthly', name: 'Scanner Pro - Monthly', midtransPrice: 50000, telegramStars: 350, duration: 'Monthly', features: ['Full scanner access', 'Unlimited daily scans', 'Priority support'], midtransPlanId: 'monthly', telegramPlanId: 'scanner_pro_monthly_tg' },
-  yearly: { id: 'yearly', name: 'Scanner Pro - Yearly', midtransPrice: 500000, telegramStars: 3500, duration: 'Yearly', features: ['Full scanner access', 'Unlimited daily scans', 'Priority support', 'Early access to new features'], midtransPlanId: 'yearly', telegramPlanId: 'scanner_pro_yearly_tg' },
+  trial: { id: 'trial', name: 'Scanner Pro - Trial', midtransPrice: 10000, telegramStars: 70, duration: '1 Minggu', features: ['Akses scanner dasar', 'Scan harian terbatas'], midtransPlanId: 'trial', telegramPlanId: 'scanner_pro_trial_tg' },
+  monthly: { id: 'monthly', name: 'Scanner Pro - Bulanan', midtransPrice: 50000, telegramStars: 350, duration: 'Bulanan', features: ['Akses scanner penuh', 'Scan harian tanpa batas', 'Dukungan prioritas'], midtransPlanId: 'monthly', telegramPlanId: 'scanner_pro_monthly_tg' },
+  yearly: { id: 'yearly', name: 'Scanner Pro - Tahunan', midtransPrice: 500000, telegramStars: 3500, duration: 'Tahunan', features: ['Akses scanner penuh', 'Scan harian tanpa batas', 'Dukungan prioritas', 'Akses awal fitur baru'], midtransPlanId: 'yearly', telegramPlanId: 'scanner_pro_yearly_tg' },
 };
 type PaymentPlanKey = keyof typeof paymentPlans;
 
 interface Profile {
-  id: string; // Supabase auth.users.id
+  id: string; 
   telegram_id?: number;
   telegram_username?: string;
   pro_plan_id_midtrans?: string;
-  pro_expiry_midtrans?: string; // ISO Date string
+  pro_expiry_midtrans?: string; 
   pro_plan_id_telegram?: string;
-  pro_expiry_telegram?: string; // ISO Date string
-  // Add other profile fields as needed
+  pro_expiry_telegram?: string; 
+  daily_scan_count?: number;
+  last_scan_date?: string;
 }
 
 interface SnapWindow extends Window {
   snap?: {
-    pay: (token: string, options?: unknown) => void;
+    pay: (token: string, options?: SnapPayOptions) => void;
   };
 }
 
-// --- KOMPONEN UTAMA ScannerPage ---
+interface SnapPayOptions {
+    onSuccess?: (result: SnapSuccessResult) => void;
+    onPending?: (result: SnapPendingResult) => void;
+    onError?: (result: SnapErrorResult) => void;
+    onClose?: () => void;
+}
+
+interface SnapSuccessResult {
+    status_code: string;
+    status_message: string;
+    transaction_id: string;
+    order_id: string;
+    gross_amount: string;
+    payment_type: string;
+    transaction_time: string;
+    transaction_status: string;
+    fraud_status: string;
+}
+interface SnapPendingResult {
+    status_code: string;
+    status_message: string;
+    transaction_id: string;
+    order_id: string;
+    payment_type: string;
+    transaction_time: string;
+    transaction_status: string;
+}
+interface SnapErrorResult {
+    status_code: string;
+    status_message: string[];
+}
+
 export default function ScannerPage() {
   const [feedbackMessage, setFeedbackMessage] = useState('Sedang memuat fitur, mohon tunggu...');
   const [feedbackType, setFeedbackType] = useState<'success' | 'error' | 'info' | 'warning'>('info');
-  const [isScanningActive, setIsScanningActive] = useState(false); 
+  const [isScanningActive, setIsScanningActive] = useState(false);
 
   const [supabaseUser, setSupabaseUser] = useState<User | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [_userProfile, setUserProfile] = useState<Profile | null>(null);
+  const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [isProMode, setIsProMode] = useState(false);
   const [proExpiryDate, setProExpiryDate] = useState<string | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
-  const [isLoadingPurchase, setIsLoadingPurchase] = useState<PaymentPlanKey | null>(null); 
+  const [isLoadingPurchase, setIsLoadingPurchase] = useState<PaymentPlanKey | null>(null);
 
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
@@ -60,7 +204,10 @@ export default function ScannerPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevImagePreviewUrlBlobRef = useRef<string | null>(null);
-  const authSubscriptionRef = useRef<Subscription | null>(null);
+  const authSubscriptionRef = useRef<SupabaseSubscription | { unsubscribe: () => void } | null>(null);
+
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showCameraErrorModal, setShowCameraErrorModal] = useState(false);
 
   const isValidDate = (d: unknown): d is Date => d instanceof Date && !isNaN(d.getTime());
 
@@ -70,28 +217,23 @@ export default function ScannerPage() {
       setProExpiryDate(null);
       return;
     }
-
     const currentDate = new Date();
     const validExpiries: Date[] = [];
-
     if (profile.pro_expiry_midtrans) {
       const midtransExpiry = new Date(profile.pro_expiry_midtrans);
       if (isValidDate(midtransExpiry) && midtransExpiry > currentDate) {
         validExpiries.push(midtransExpiry);
       }
     }
-
     if (profile.pro_expiry_telegram) {
       const telegramExpiry = new Date(profile.pro_expiry_telegram);
       if (isValidDate(telegramExpiry) && telegramExpiry > currentDate) {
         validExpiries.push(telegramExpiry);
       }
     }
-
     if (validExpiries.length > 0) {
       const maxTimestamp = Math.max(...validExpiries.map(date => date.getTime()));
       const latest = new Date(maxTimestamp);
-      
       setIsProMode(true);
       setProExpiryDate(latest.toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }));
     } else {
@@ -101,7 +243,13 @@ export default function ScannerPage() {
   }, []);
 
   const fetchUserProfile = useCallback(async (userId: string) => {
-    setIsLoadingAuth(true);
+    if (!supabaseUrl || !supabaseAnonKey) {
+        setFeedbackMessage('Konfigurasi Supabase tidak lengkap. Tidak dapat mengambil profil.');
+        setFeedbackType('error');
+        setIsLoadingAuth(false);
+        return; 
+    }
+    setIsLoadingAuth(true); 
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -110,27 +258,24 @@ export default function ScannerPage() {
         .single();
 
       if (error && error.code !== 'PGRST116') { 
-        throw error;
+        throw error; 
       }
-      
       if (data) {
-        const profileData = data as Profile & { daily_scan_count?: number; last_scan_date?: string };
+        const profileData = data as Profile;
         setUserProfile(profileData);
         checkProStatus(profileData);
-
         const today = new Date().toISOString().split('T')[0];
         let currentScans = profileData.daily_scan_count || 0;
-
         if (profileData.last_scan_date !== today) {
           currentScans = 0;
-          supabase.from('profiles').update({ daily_scan_count: 0, last_scan_date: today }).eq('id', userId).then(({ error: updateError }) => {
+          supabase.from('profiles').update({ daily_scan_count: 0, last_scan_date: today }).eq('id', userId)
+          .then(({ error: updateError }) => {
             if (updateError) console.error('Error resetting daily scan count:', updateError);
           });
         }
         setDailyScanCount(currentScans);
-
-      } else {
-        setUserProfile(null); 
+      } else { 
+        setUserProfile(null);
         setIsProMode(false);
         setProExpiryDate(null);
         setDailyScanCount(0);
@@ -140,54 +285,87 @@ export default function ScannerPage() {
       const message = error instanceof Error ? error.message : String(error);
       setFeedbackMessage(`Gagal memuat profil: ${message}`);
       setFeedbackType('error');
-      setUserProfile(null);
+      setUserProfile(null); 
       setIsProMode(false);
       setProExpiryDate(null);
     } finally {
-      setIsLoadingAuth(false);
+      setIsLoadingAuth(false); 
     }
-  }, [checkProStatus]);
+  }, [checkProStatus]); 
 
-  // Supabase Auth and Profile Fetching useEffect
   useEffect(() => {
+    if (!supabaseUrl || !supabaseAnonKey) {
+        setFeedbackMessage('Konfigurasi Supabase tidak lengkap. Fitur autentikasi dinonaktifkan.');
+        setFeedbackType('error');
+        setIsLoadingAuth(false);
+        return;
+    }
+
     const getInitialSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        console.error("Error getting session:", sessionError);
+        setFeedbackMessage('Gagal mendapatkan sesi autentikasi.');
+        setFeedbackType('error');
+        setIsLoadingAuth(false);
+        return;
+      }
       if (session?.user) {
         setSupabaseUser(session.user);
-        fetchUserProfile(session.user.id);
+        await fetchUserProfile(session.user.id);
       } else {
         setIsLoadingAuth(false);
-        setFeedbackMessage('Silakan login untuk menggunakan fitur Scanner Pro.');
-        setFeedbackType('warning');
+        if(!feedbackMessage.startsWith('Gagal')) {
+          setFeedbackMessage('Silakan login untuk menggunakan fitur Scanner Pro.');
+          setFeedbackType('warning');
+        }
       }
     };
-
     getInitialSession();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSupabaseUser(session?.user ?? null);
-      if (session?.user) {
-        fetchUserProfile(session.user.id);
-      } else {
-        setUserProfile(null);
-        setIsProMode(false);
-        setProExpiryDate(null);
-        setIsLoadingAuth(false);
+    const authResponse = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        setSupabaseUser(session?.user ?? null);
+        if (session?.user) {
+          try {
+            await fetchUserProfile(session.user.id);
+          } catch (profileError) {
+            console.error("Error fetching profile on auth state change:", profileError);
+            setFeedbackMessage('Gagal memuat profil setelah perubahan status login.');
+            setFeedbackType('error');
+            setUserProfile(null);
+            setIsProMode(false);
+            setProExpiryDate(null);
+          }
+        } else {
+          setUserProfile(null);
+          setIsProMode(false);
+          setProExpiryDate(null);
+          setIsLoadingAuth(false);
+        }
       }
-    });
-    
-    authSubscriptionRef.current = authListener.subscription;
+    ) as { data: { subscription: SupabaseSubscription | null }; error: AuthError | null };
+
+    const { data: listenerSubscriptionData, error: authListenerSetupError } = authResponse;
+
+    if (authListenerSetupError) {
+      console.error("Error setting up onAuthStateChange listener:", authListenerSetupError);
+      setFeedbackMessage('Gagal memantau status autentikasi.');
+      setFeedbackType('error');
+      setIsLoadingAuth(false);
+    }
+
+    authSubscriptionRef.current = listenerSubscriptionData?.subscription ?? null;
 
     return () => {
       authSubscriptionRef.current?.unsubscribe();
     };
-  }, [fetchUserProfile]);
+  }, [fetchUserProfile, feedbackMessage]);
 
-  // Load Midtrans Snap.js script
   useEffect(() => {
-    const midtransClientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY;
-    if (!midtransClientKey || midtransClientKey === 'YOUR_MIDTRANS_CLIENT_KEY_PLACEHOLDER') {
-      console.warn('Midtrans client key not set. Midtrans payments will not work.');
+    const midtransClientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || "SB-Mid-client-xxxxxxxxxxxxxxx";
+    if (!midtransClientKey || midtransClientKey === 'YOUR_MIDTRANS_CLIENT_KEY_PLACEHOLDER' || midtransClientKey === "SB-Mid-client-xxxxxxxxxxxxxxx") {
+      console.warn('Midtrans client key not set or is placeholder. Midtrans payments will not work.');
       return;
     }
     const script = document.createElement('script');
@@ -195,35 +373,49 @@ export default function ScannerPage() {
     script.setAttribute('data-client-key', midtransClientKey);
     script.async = true;
     document.head.appendChild(script);
+    script.onload = () => {
+      // console.log("Midtrans Snap.js loaded successfully.");
+    };
+    script.onerror = () => {
+        console.error("Failed to load Midtrans Snap.js.");
+        setFeedbackMessage('Gagal memuat skrip pembayaran. Fitur pembayaran mungkin tidak tersedia.');
+        setFeedbackType('error');
+    };
     return () => {
       const existingScript = document.querySelector(`script[src="${script.src}"]`);
       if (existingScript) {
-        document.head.removeChild(existingScript);
+          try {
+            document.head.removeChild(existingScript);
+          } catch (e) {
+            console.warn("Could not remove Midtrans script on cleanup:", e);
+          }
       }
     };
   }, []);
 
-  // --- Feedback Siap Pakai (Adjusted) ---
-  useEffect(() => {
-    if (isLoadingAuth) {
-        setFeedbackMessage('Memeriksa status autentikasi dan langganan...');
-        setFeedbackType('info');
-    } else if (supabaseUser && !feedbackMessage.startsWith('Gagal')) {
-        if (isProMode) {
-            setFeedbackMessage(`Akses Pro aktif hingga ${proExpiryDate}. Fitur siap digunakan.`);
-            setFeedbackType('success');
-        } else if (feedbackMessage.includes('memuat fitur') || feedbackMessage.includes('Memeriksa status')){
-            setFeedbackMessage('Anda menggunakan mode gratis. Upgrade ke Pro untuk fitur penuh.');
-            setFeedbackType('info');
-        }
-    } else if (!supabaseUser && !isLoadingAuth && !feedbackMessage.startsWith('Gagal')){
-        setFeedbackMessage('Silakan login untuk menggunakan scanner atau upgrade ke Pro.');
-        setFeedbackType('warning');
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isProMode, proExpiryDate, supabaseUser, isLoadingAuth]); // Removed feedbackMessage from deps to avoid loops
+   useEffect(() => {
+     if( !supabaseUrl || !supabaseAnonKey) return;
 
-  // --- Cleanup Blob URL & Timeouts ---
+     if (isLoadingAuth) {
+         setFeedbackMessage('Memeriksa status autentikasi dan langganan...');
+         setFeedbackType('info');
+     } else if (supabaseUser) {
+         if (isProMode) {
+             setFeedbackMessage(`Akses Pro aktif hingga ${proExpiryDate}. Fitur siap digunakan.`);
+             setFeedbackType('success');
+         } else if (feedbackMessage.includes('memuat fitur') || feedbackMessage.includes('Memeriksa status') || feedbackMessage.startsWith('Sedang memuat')) {
+             setFeedbackMessage('Anda menggunakan mode gratis. Upgrade ke Pro untuk fitur penuh.');
+             setFeedbackType('info');
+         }
+     } else if (!supabaseUser && !isLoadingAuth){
+       if (!feedbackMessage.startsWith('Gagal') && !feedbackMessage.startsWith('Silakan login')) {
+         setFeedbackMessage('Silakan login untuk menggunakan scanner atau upgrade ke Pro.');
+         setFeedbackType('warning');
+       }
+     }
+   }, [isProMode, proExpiryDate, supabaseUser, isLoadingAuth, feedbackMessage]); 
+
+
   useEffect(() => {
     const previousBlobUrl = prevImagePreviewUrlBlobRef.current;
     if (imagePreviewUrl && imagePreviewUrl.startsWith('blob:')) {
@@ -236,27 +428,35 @@ export default function ScannerPage() {
         URL.revokeObjectURL(previousBlobUrl);
       }
     };
-  }, [imagePreviewUrl]); 
+  }, [imagePreviewUrl]);
 
   useEffect(() => {
-    const videoElement = videoRef.current; // Capture videoRef.current
+    const videoElement = videoRef.current;
     return () => {
       if (videoElement?.srcObject) {
         const stream = videoElement.srcObject as MediaStream;
         stream.getTracks().forEach(track => track.stop());
-        if (videoElement) videoElement.srcObject = null; // Use captured element
+        if (videoElement) videoElement.srcObject = null;
       }
     };
-  }, []); 
+  }, []);
 
   const convertFileToBase64 = useCallback((file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
       reader.onloadend = () => {
-        const base64ImageData = reader.result?.toString().split(',')[1];
-        if (base64ImageData) resolve(base64ImageData);
-        else reject(new Error('Gagal konversi base64.'));
+        const resultString = reader.result?.toString();
+        if (resultString) {
+            const base64ImageData = resultString.split(',')[1];
+            if (base64ImageData) {
+                resolve(base64ImageData);
+            } else {
+                reject(new Error('Gagal memisahkan data base64 dari string hasil pembacaan file.'));
+            }
+        } else {
+             reject(new Error('Gagal konversi file ke base64 (hasil pembacaan kosong).'));
+        }
       };
       reader.onerror = (error) => reject(new Error('Gagal baca file: ' + (error instanceof ProgressEvent ? 'ProgressEvent' : String(error)) ) );
     });
@@ -269,9 +469,28 @@ export default function ScannerPage() {
       setIsScanningActive(false);
       return;
     }
-    setIsScanningActive(true); 
+    setIsScanningActive(true);
     setFeedbackMessage('Menganalisis gambar dengan AI...');
     setFeedbackType('info');
+
+    let base64ImageData: string | null = null;
+    try {
+        base64ImageData = await convertFileToBase64(imageFile); // Using the convertFileToBase64 function
+    } catch (conversionError: unknown) {
+        console.error('Error converting file to base64:', conversionError);
+        setFeedbackMessage(`Gagal memproses gambar: ${conversionError instanceof Error ? conversionError.message : String(conversionError)}`);
+        setFeedbackType('error');
+        setIsScanningActive(false);
+        return;
+    }
+    
+    if (!base64ImageData) {
+        setFeedbackMessage('Gagal mengkonversi gambar ke format yang dibutuhkan.');
+        setFeedbackType('error');
+        setIsScanningActive(false);
+        return;
+    }
+
     const tradingPrompt = `You are a very useful assistant. Help me with determining the analisis day trading content of my market finance. The photo shows market analisis product for a trading. Determine which products are shown in the photo and return them ONLY as a text list, where each list element should contain:
 - Market Structure: (e.g., Uptrend, Downtrend, Sideways, Breakout, Support/Resistance levels)
 - Candlestick Pattern: (e.g., Doji, Hammer, Engulfing, Morning Star, etc., and its implication)
@@ -287,44 +506,46 @@ export default function ScannerPage() {
 - Sentimen Media sosial
 `;
     try {
-      const base64ImageData = await convertFileToBase64(imageFile);
-      const response = await fetch('/api/llm/gemini/analyze-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: tradingPrompt, imageData: base64ImageData, mimeType: imageFile.type }),
-      });
-
-      if (!response.ok) {
-        let errorResponseMessage = `Error backend (${response.status})`;
-        try {
-          const errorData = await response.json();
-          errorResponseMessage = errorData.error || JSON.stringify(errorData) || `Error backend (${response.status}) - Respons tidak dikenal`;
-        } catch { // Anonymous catch for jsonError
-          // Jika parsing JSON gagal, coba baca sebagai teks
-          try {
-            const errorText = await response.text();
-            errorResponseMessage = `Error backend (${response.status}): ${errorText || 'Tidak ada detail tambahan.'}`;
-          } catch { // Anonymous catch for textError
-            // Jika membaca sebagai teks juga gagal
-            errorResponseMessage = `Error backend (${response.status}) - Gagal membaca respons error.`;
-          }
-        }
-        throw new Error(errorResponseMessage);
-      }
-
+      console.log("Attempting to call /api/llm/gemini/analyze-image (currently mocked) with base64 image data and prompt:", tradingPrompt);
+      const formData = new FormData();
+      formData.append('imageData', base64ImageData);
+      formData.append('prompt', tradingPrompt);
+      const response = await fetch('/api/llm/gemini/analyze-image', { method: 'POST', body: formData });
       const result = await response.json();
-      if (result.text) {
-        setScanResults(result.text);
-        setShowScanResultsPopup(true);
-        setFeedbackMessage('Analisis AI berhasil!');
-        setFeedbackType('success');
+      
+      if (result.error) {
+        console.error("Error from backend:", result.error);
+        setFeedbackMessage(`Gagal memproses gambar: ${result.error}`);
+        setFeedbackType('error');
+        setIsScanningActive(false);
+        return;
+      }
+      console.log("Result from backend:", result);
+      await new Promise(resolve => setTimeout(resolve, 1500)); // Mock API call
+      const mockApiResult = {
+        text: `Market Structure: Uptrend, Breakout from resistance at 150.00
+Candlestick Pattern: Bullish Engulfing near support, indicating potential continuation.
+Trend Market: Strong Bullish
+Signal Type: Buy
+Bandarmology: Accumulation observed in the last 5 candles.
+Rekomendasi Trading:
+  - Time Frame: 4 hours, 1 Day
+  - Gaya Trading: Swing Trading
+  - Resiko: Medium
+  - Rekomendasi Aksi: Buy on pullback to 152.00, Stop Loss at 148.50, Target Price 160.00
+Sentimen Pasar: Positif
+Sentimen Media sosial: Netral cenderung positif`
+      };
 
-        // If free user, increment scan count
-        if (!isProMode && supabaseUser) {
+      if (mockApiResult.text) {
+        setScanResults(mockApiResult.text);
+        setShowScanResultsPopup(true);
+        setFeedbackMessage('Analisis AI berhasil! (Menggunakan data mock)');
+        setFeedbackType('success');
+        if (!isProMode && supabaseUser && supabaseUrl && supabaseAnonKey) {
           const newCount = dailyScanCount + 1;
           setDailyScanCount(newCount);
           const today = new Date().toISOString().split('T')[0];
-          // Update Supabase in the background
           supabase.from('profiles')
             .update({ daily_scan_count: newCount, last_scan_date: today })
             .eq('id', supabaseUser.id)
@@ -333,16 +554,18 @@ export default function ScannerPage() {
             });
         }
       } else {
-        throw new Error('Respon backend tidak valid.');
+        throw new Error('Respon backend tidak valid (Mock).');
       }
-    } catch (error: unknown) { 
+
+    } catch (error: unknown) {
       console.error('Error during Gemini scan:', error);
       setFeedbackMessage(`Analisis AI gagal: ${error instanceof Error ? error.message : String(error)}`);
       setFeedbackType('error');
     } finally {
-      setIsScanningActive(false); 
+      setIsScanningActive(false);
     }
-  }, [convertFileToBase64, dailyScanCount, isProMode, supabaseUser]);
+  }, [dailyScanCount, isProMode, supabaseUser, convertFileToBase64]); // Added convertFileToBase64 to dependencies
+
 
   const closeCamera = useCallback(() => {
     if (videoRef.current?.srcObject) {
@@ -352,25 +575,20 @@ export default function ScannerPage() {
     }
     setIsCameraOpen(false);
     setCameraError(null);
-    setIsScanningActive(false); 
   }, []);
 
-  // Pindahkan definisi openCamera ke sini, SEBELUM useEffect yang menggunakannya
   const openCamera = useCallback(async () => {
     if (!videoRef.current) {
-      setFeedbackMessage('Komponen video belum siap. Coba lagi sesaat.');
-      setIsCameraOpen(false);
-      return;
+      const msg = 'Komponen video belum siap. Coba lagi sesaat.';
+      setFeedbackMessage(msg); setCameraError(msg); setShowCameraErrorModal(true); setIsCameraOpen(false); return;
     }
-
     if (isScanningActive || isCameraOpen) return;
-    setIsScanningActive(true); 
-    setFeedbackMessage('Mengakses kamera...');
-    setFeedbackType('info');
-    setCameraError(null);
+    setIsScanningActive(true);
+    setFeedbackMessage('Mengakses kamera...'); setFeedbackType('info');
+    setCameraError(null); setShowCameraErrorModal(false);
     if (imagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(imagePreviewUrl);
-    setImagePreviewUrl(null); 
-    setUploadedImage(null); 
+    setImagePreviewUrl(null); setUploadedImage(null);
+
     if (navigator.mediaDevices?.getUserMedia) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
@@ -378,63 +596,39 @@ export default function ScannerPage() {
           videoRef.current.srcObject = stream;
           videoRef.current.onloadedmetadata = () => {
             videoRef.current?.play().then(() => {
-                setIsCameraOpen(true);
-                setIsScanningActive(false); 
+                setIsCameraOpen(true); setIsScanningActive(false);
                 setFeedbackMessage('Kamera aktif. Arahkan & ambil foto.');
-            }).catch(err => { 
-                console.error("Error playing video stream:", err);
+            }).catch(err => {
                 const errorMessage = err instanceof Error ? err.message : String(err);
-                setCameraError(`Gagal stream video: ${errorMessage}`);
-                setFeedbackMessage(`Gagal stream video: ${errorMessage}`);
-                setFeedbackType('error');
-                stream.getTracks().forEach(track => track.stop()); 
-                setIsCameraOpen(false); setIsScanningActive(false); 
+                const finalMessage = `Gagal memulai stream video: ${errorMessage}`;
+                setCameraError(finalMessage); setFeedbackMessage(finalMessage); setFeedbackType('error');
+                setShowCameraErrorModal(true); stream.getTracks().forEach(track => track.stop());
+                setIsCameraOpen(false); setIsScanningActive(false);
             });
           };
         } else {
             stream.getTracks().forEach(track => track.stop()); setIsScanningActive(false);
-            setFeedbackMessage('Gagal menginisialisasi video. Ref tidak ditemukan setelah stream didapatkan.'); 
-            setFeedbackType('error');
+            const msg = 'Gagal menginisialisasi video. Ref tidak ditemukan.';
+            setFeedbackMessage(msg); setCameraError(msg); setShowCameraErrorModal(true); setFeedbackType('error');
         }
-      } catch (err: unknown) { 
+      } catch (err: unknown) {
         let message = 'Gagal akses kamera.';
         const errorName = err instanceof Error ? err.name : undefined;
         const errorMessageText = err instanceof Error ? err.message : String(err);
-
-        if (errorName === "NotAllowedError") message = 'Akses kamera ditolak.';
-        else if (errorName === "NotFoundError") message = 'Kamera tidak ada.';
-        else if (errorName === "NotReadableError") message = 'Kamera bermasalah.';
+        if (errorName === "NotAllowedError") message = 'Akses kamera ditolak. Mohon izinkan di pengaturan browser Anda.';
+        else if (errorName === "NotFoundError" || errorName === "DevicesNotFoundError") message = 'Kamera tidak ditemukan. Pastikan kamera terhubung.';
+        else if (errorName === "NotReadableError" || errorName === "TrackStartError") message = 'Kamera sedang digunakan atau bermasalah. Coba tutup aplikasi lain yang mungkin menggunakan kamera.';
         else message = `Gagal kamera: ${errorName || errorMessageText}`;
         setCameraError(message); setFeedbackMessage(message); setFeedbackType('error');
-        setIsCameraOpen(false); setIsScanningActive(false);
+        setShowCameraErrorModal(true); setIsCameraOpen(false); setIsScanningActive(false);
       }
     } else {
-      setFeedbackMessage('Fitur kamera tidak didukung.'); setFeedbackType('error');
+      const msg = 'Fitur kamera tidak didukung di browser atau perangkat ini.';
+      setFeedbackMessage(msg); setFeedbackType('error');
+      setCameraError(msg); setShowCameraErrorModal(true);
       setIsCameraOpen(false); setIsScanningActive(false);
     }
-  }, [isScanningActive, isCameraOpen, imagePreviewUrl, setFeedbackMessage, setIsCameraOpen, setFeedbackType, setCameraError, setImagePreviewUrl, setUploadedImage]); // Pastikan semua dependensi state setter juga dimasukkan jika ESLint menyarankannya
-
-  useEffect(() => {
-    if (isCameraOpen && !isScanningActive) {
-      const timeoutId = setTimeout(() => {
-        if (videoRef.current) {
-          openCamera(); // Sekarang openCamera sudah didefinisikan
-        }
-      }, 100);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [isCameraOpen, isScanningActive, openCamera]);
-
-  useEffect(() => {
-    console.log('Video ref in useEffect:', videoRef.current);
-    // Logika lain yang mungkin ada di sini
-  }, []); // Atau dengan dependensi yang sesuai
-
-  // Hapus fungsi ini jika tidak ada tombol atau event yang memanggilnya
-  // const handleOpenCameraClick = () => {
-  //   console.log('Video ref before openCamera call:', videoRef.current);
-  //   openCamera();
-  // }; 
+  }, [isScanningActive, isCameraOpen, imagePreviewUrl]);
 
   const dataURLtoFile = useCallback((dataurl: string, filename: string): File | null => {
     try {
@@ -443,358 +637,325 @@ export default function ScannerPage() {
       const mime = mimeMatch[1]; const bstr = atob(arr[1]); let n = bstr.length;
       const u8arr = new Uint8Array(n); while (n--) { u8arr[n] = bstr.charCodeAt(n); }
       return new File([u8arr], filename, { type: mime });
-    } catch (e: unknown) { 
+    } catch (e: unknown) {
       const errorMessage = e instanceof Error ? e.message : String(e);
       console.error("Error converting data URL to file:", errorMessage);
-      return null; 
-    } 
+      setFeedbackMessage(`Gagal konversi foto: ${errorMessage}`); setFeedbackType('error');
+      return null;
+    }
   }, []);
 
   const takePhoto = useCallback(() => {
     if (!isCameraOpen || !videoRef.current || !canvasRef.current) {
-        setFeedbackMessage('Kamera tidak aktif.'); setFeedbackType('error'); return;
+        setFeedbackMessage('Kamera tidak aktif atau komponen tidak siap.'); setFeedbackType('error'); return;
     }
-    if (videoRef.current.readyState >= videoRef.current.HAVE_METADATA && videoRef.current.videoWidth > 0) {
-      setFeedbackMessage('Mengambil foto...');
+    if (videoRef.current.readyState >= videoRef.current.HAVE_METADATA && videoRef.current.videoWidth > 0 && videoRef.current.videoHeight > 0) {
+      setFeedbackMessage('Mengambil foto...'); setFeedbackType('info'); setIsScanningActive(true);
       const video = videoRef.current; const canvas = canvasRef.current;
       canvas.width = video.videoWidth; canvas.height = video.videoHeight;
       const context = canvas.getContext('2d');
       if (context) {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.9); 
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
         if (imagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(imagePreviewUrl);
-        setImagePreviewUrl(dataUrl); 
+        setImagePreviewUrl(dataUrl);
         const photoFile = dataURLtoFile(dataUrl, `scan-${Date.now()}.jpg`);
         if (photoFile) {
-          setUploadedImage(photoFile); setFeedbackMessage('Foto diambil.'); setFeedbackType('success');
+          setUploadedImage(photoFile); setFeedbackMessage('Foto diambil. Siap untuk dipindai.'); setFeedbackType('success');
         } else {
-          setFeedbackMessage('Gagal proses foto.'); setFeedbackType('error');
-          if (imagePreviewUrl === dataUrl) setImagePreviewUrl(null); 
+          setFeedbackMessage('Gagal memproses foto setelah diambil.'); setFeedbackType('error');
+          if (imagePreviewUrl === dataUrl) setImagePreviewUrl(null);
         }
       } else {
-        setFeedbackMessage('Gagal konteks canvas.'); setFeedbackType('error');
+        setFeedbackMessage('Gagal mendapatkan konteks canvas untuk mengambil foto.'); setFeedbackType('error');
       }
-      closeCamera(); 
+      closeCamera(); setIsScanningActive(false);
     } else {
-        setFeedbackMessage('Kamera belum siap.'); setFeedbackType('error');
+        setFeedbackMessage('Kamera belum siap atau stream video tidak valid.'); setFeedbackType('error'); setIsScanningActive(false);
     }
-  }, [isCameraOpen, closeCamera, dataURLtoFile, imagePreviewUrl]); 
+  }, [isCameraOpen, closeCamera, dataURLtoFile, imagePreviewUrl]);
 
   const handleCloseScanResultsPopup = async () => {
     setShowScanResultsPopup(false);
-    setFeedbackMessage('Hasil analisis ditutup.');
-    setFeedbackType('info');
-    if (!isProMode && supabaseUser) {
+    setFeedbackMessage('Hasil analisis ditutup.'); setFeedbackType('info');
+    if (!isProMode && supabaseUser && supabaseUrl && supabaseAnonKey) {
       setShowMonetagAdModal(true);
-      // You might want to update feedback message here too
-      // setFeedbackMessage('Terima kasih telah menggunakan versi gratis! Lihat penawaran sponsor kami.');
     }
+  };
+
+  const handleActualScanOrOpenCamera = async () => {
+    if (uploadedImage) await performGeminiScanViaBackend(uploadedImage);
+    else await openCamera();
   };
 
   const handleMainScanClick = async () => {
     if (isScanningActive || isCameraOpen) return;
+    if (!supabaseUser && supabaseUrl && supabaseAnonKey) {
+      setFeedbackMessage('Silakan login untuk menggunakan fitur ini.'); setFeedbackType('warning'); return;
+    } else if (!supabaseUrl || !supabaseAnonKey) {
+      setFeedbackMessage('Layanan tidak tersedia (konfigurasi backend hilang).'); setFeedbackType('error'); return;
+    }
 
-    if (uploadedImage) { 
-      if (isProMode) { 
-        setShowScanResultsPopup(true); 
-      } else { 
-          if (dailyScanCount >= FREE_SCAN_LIMIT) {
-            setFeedbackMessage(`Limit scan harian (${FREE_SCAN_LIMIT}) tercapai. Upgrade ke Pro untuk scan tanpa batas atau coba lagi besok.`);
-            setFeedbackType('warning');
-            return;
-          }
-          performGeminiScanViaBackend(uploadedImage);
+    if (isProMode) {
+      await handleActualScanOrOpenCamera();
+    } else {
+      if (dailyScanCount < FREE_SCAN_LIMIT) {
+         setShowUpgradeModal(true);
+      } else {
+        setFeedbackMessage(`Limit scan harian gratis (${FREE_SCAN_LIMIT}) telah tercapai. Silakan upgrade ke Pro.`);
+        setFeedbackType('warning');
+        setShowUpgradeModal(true);
       }
-    } else { 
-      openCamera();
     }
   };
 
   const handleImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
-    if (isCameraOpen) closeCamera(); 
+    if (isCameraOpen) closeCamera();
     const file = event.target.files?.[0];
     if (file) {
       if (!file.type.startsWith('image/')) {
-        setFeedbackMessage('Format file tidak disokong.');
-        setFeedbackType('error');
-        if (fileInputRef.current) fileInputRef.current.value = ""; 
+        setFeedbackMessage('Format file tidak didukung. Harap unggah file gambar.'); setFeedbackType('error');
+        if (fileInputRef.current) fileInputRef.current.value = "";
         return;
       }
       setUploadedImage(file);
-      if (imagePreviewUrl?.startsWith('blob:')) {
-          URL.revokeObjectURL(imagePreviewUrl);
-      }
+      if (imagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(imagePreviewUrl);
       setImagePreviewUrl(URL.createObjectURL(file));
-      setFeedbackMessage('Gambar diunggah. Klik tombol pindai.');
-      setFeedbackType('info'); 
+      setFeedbackMessage('Gambar diunggah. Siap untuk dipindai.'); setFeedbackType('info');
     }
   };
 
   const handleRemoveImage = () => {
-    if (isCameraOpen) closeCamera(); 
-    if (imagePreviewUrl?.startsWith('blob:')) {
-        URL.revokeObjectURL(imagePreviewUrl);
-    }
-    setUploadedImage(null);
-    setImagePreviewUrl(null);
-    setFeedbackMessage('Gambar dibuang. Ambil foto atau unggah baru.');
-    setFeedbackType('info');
-    if (fileInputRef.current) fileInputRef.current.value = ""; 
+    if (isCameraOpen) closeCamera();
+    if (imagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(imagePreviewUrl);
+    setUploadedImage(null); setImagePreviewUrl(null);
+    setFeedbackMessage('Gambar dibuang.'); setFeedbackType('info');
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // Updated feedback styles to use Tailwind theme classes
   const getFeedbackStyles = () => {
     switch (feedbackType) {
-      case 'success': 
-        return { 
-          borderColorClass: 'border-primary', 
-          bgColorClass: 'bg-primary/10', // Subtle background using primary color with low opacity
-          textColorClass: 'text-foreground', // Use main foreground for success text on dark bg
-          icon: <CheckCircle2 className="h-5 w-5 text-primary" /> 
-        };
-      case 'error': 
-        return { 
-          borderColorClass: 'border-red-500', // Keep red for error indication
-          bgColorClass: 'bg-red-500/10', 
-          textColorClass: 'text-red-400', // Lighter red for text
-          icon: <AlertCircle className="h-5 w-5 text-red-500" /> 
-        };
-      case 'warning':
-        return {
-          borderColorClass: 'border-yellow-500',
-          bgColorClass: 'bg-yellow-500/10',
-          textColorClass: 'text-yellow-400',
-          icon: <ExternalLink className="h-5 w-5 text-yellow-500" />
-        };
-      default: // info
-        return { 
-          borderColorClass: 'border-muted-foreground', 
-          bgColorClass: 'bg-muted-foreground/10', 
-          textColorClass: 'text-muted-foreground', 
-          icon: <AlertCircle className="h-5 w-5 text-muted-foreground" /> 
-        };
+      case 'success': return { borderColorClass: 'border-green-500', bgColorClass: 'bg-green-500/10', textColorClass: 'text-green-400', icon: <CheckCircle2 className="h-5 w-5 text-green-500" /> };
+      case 'error': return { borderColorClass: 'border-red-500', bgColorClass: 'bg-red-500/10', textColorClass: 'text-red-400', icon: <AlertCircle className="h-5 w-5 text-red-500" /> };
+      case 'warning': return { borderColorClass: 'border-yellow-500', bgColorClass: 'bg-yellow-500/10', textColorClass: 'text-yellow-400', icon: <ShieldAlert className="h-5 w-5 text-yellow-500" /> };
+      default: return { borderColorClass: 'border-blue-500', bgColorClass: 'bg-blue-500/10', textColorClass: 'text-blue-400', icon: <AlertCircle className="h-5 w-5 text-blue-500" /> };
     }
   };
   const feedbackStyles = getFeedbackStyles();
 
   const mainButtonText = () => {
-    if (isCameraOpen) return 'Kamera Aktif...'; 
-    if (uploadedImage) return isProMode ? 'Pindai (Pro)' : 'Pindai (Gratis)';
-    return isProMode ? 'Buka Kamera (Pro)' : 'Buka Kamera (Gratis)';
+    if (isCameraOpen) return 'Kamera Aktif...';
+    if (uploadedImage) return isProMode ? 'Pindai Gambar (Pro)' : 'Pindai Gambar';
+    return isProMode ? 'Buka Kamera (Pro)' : 'Buka Kamera';
   };
-  
-  const mainButtonDisabled = isScanningActive || isCameraOpen;
 
-  const handlePurchase = async (plan: PaymentPlanKey) => {
-    if (!supabaseUser) {
-      setFeedbackMessage('Silakan login untuk melakukan pembelian.');
-      setFeedbackType('warning');
-      return;
-    }
-    if (!(window as SnapWindow).snap) {
-      setFeedbackMessage('Layanan pembayaran belum siap. Coba lagi nanti.');
-      setFeedbackType('error');
-      return;
+  const mainButtonDisabled = isScanningActive;
+
+  const handlePurchase = async (planKey: PaymentPlanKey) => {
+    if (!supabaseUser && supabaseUrl && supabaseAnonKey) {
+      setFeedbackMessage('Silakan login untuk melakukan pembelian.'); setFeedbackType('warning'); return;
+    } else if (!supabaseUrl || !supabaseAnonKey) {
+        setFeedbackMessage('Layanan pembayaran tidak tersedia (konfigurasi backend hilang).'); setFeedbackType('error'); return;
     }
 
-    setIsLoadingPurchase(plan);
-    setFeedbackMessage(`Memproses langganan ${paymentPlans[plan].name}...`);
-    setFeedbackType('info');
+    const snap = (window as SnapWindow).snap;
+    if (!snap) {
+      setFeedbackMessage('Layanan pembayaran belum siap. Mohon tunggu atau coba muat ulang halaman.'); setFeedbackType('error'); return;
+    }
+    const selectedPlan = paymentPlans[planKey];
+    setIsLoadingPurchase(planKey);
+    setFeedbackMessage(`Memproses ${selectedPlan.name}...`); setFeedbackType('info');
 
     try {
-      const response = await fetch('/api/payment/midtrans/charge', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          planId: paymentPlans[plan].midtransPlanId,
-          userId: supabaseUser.id,
-          userEmail: supabaseUser.email,
-          userName: supabaseUser.user_metadata?.full_name || supabaseUser.email, // Or any other name field
-          amount: paymentPlans[plan].midtransPrice,
-          planName: paymentPlans[plan].name,
-        }),
-      });
+      console.log("Attempting to call /api/payment/midtrans/charge (currently mocked) for plan:", selectedPlan.midtransPlanId, "User:", supabaseUser?.id);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const mockMidtransToken = `mock-token-${selectedPlan.midtransPlanId}-${Date.now()}`;
+      const data = { token: mockMidtransToken, order_id: `mock-order-${Date.now()}` };
 
-      const data = await response.json();
+      snap.pay(data.token, {
+        onSuccess: function (result: SnapSuccessResult) {
+          setFeedbackMessage(`Pembayaran ${selectedPlan.name} berhasil! ID Pesanan: ${result.order_id}`); setFeedbackType('success');
+          if (supabaseUser && supabaseUrl && supabaseAnonKey) {
+            const expiry = new Date();
+            if (selectedPlan.id === 'trial') expiry.setDate(expiry.getDate() + 7);
+            else if (selectedPlan.id === 'monthly') expiry.setMonth(expiry.getMonth() + 1);
+            else if (selectedPlan.id === 'yearly') expiry.setFullYear(expiry.getFullYear() + 1);
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Gagal membuat transaksi Midtrans.');
-      }
+            const updatedProfileData = {
+                id: userProfile?.id || supabaseUser.id,
+                telegram_id: userProfile?.telegram_id,
+                telegram_username: userProfile?.telegram_username,
+                pro_plan_id_midtrans: selectedPlan.midtransPlanId,
+                pro_expiry_midtrans: expiry.toISOString(),
+                pro_plan_id_telegram: userProfile?.pro_plan_id_telegram,
+                pro_expiry_telegram: userProfile?.pro_expiry_telegram,
+                daily_scan_count: userProfile?.daily_scan_count || 0,
+                last_scan_date: userProfile?.last_scan_date || new Date().toISOString().split('T')[0],
+            } as Profile;
 
-      (window as SnapWindow).snap?.pay(data.token, {
-        onSuccess: function () {
-          setFeedbackMessage('Pembayaran berhasil! Status Pro akan segera aktif.');
-          setFeedbackType('success');
-          if (supabaseUser) fetchUserProfile(supabaseUser.id);
+            setUserProfile(updatedProfileData);
+            checkProStatus(updatedProfileData);
+
+             if (supabaseUrl && supabaseAnonKey) {
+                supabase.from('profiles')
+                    .update({
+                        pro_plan_id_midtrans: selectedPlan.midtransPlanId,
+                        pro_expiry_midtrans: expiry.toISOString()
+                    })
+                    .eq('id', supabaseUser.id)
+                    .then(({ error: updateError }) => {
+                        if (updateError) {
+                            console.error('Gagal update profil setelah pembayaran (Midtrans):', updateError);
+                            setFeedbackMessage('Pembayaran berhasil, namun gagal update status Pro di server. Mohon kontak dukungan.');
+                                setFeedbackType('warning');
+                        } else {
+                            console.log("Profil Supabase diupdate setelah pembayaran Midtrans.");
+                        }
+                    });
+            }
+          }
+          setShowUpgradeModal(false); setIsLoadingPurchase(null);
         },
-        onPending: function () {
-          setFeedbackMessage('Pembayaran Anda tertunda. Cek email atau akun Midtrans Anda.');
-          setFeedbackType('warning');
+        onPending: function (result: SnapPendingResult) {
+          setFeedbackMessage(`Pembayaran ${selectedPlan.name} tertunda. ID Pesanan: ${result.order_id}`); setFeedbackType('warning');
+          setIsLoadingPurchase(null);
         },
-        onError: function () {
-          setFeedbackMessage('Pembayaran gagal. Silakan coba lagi.');
-          setFeedbackType('error');
+        onError: function (result: SnapErrorResult) {
+          const errorMessages = Array.isArray(result.status_message) ? result.status_message.join(", ") : String(result.status_message);
+          setFeedbackMessage(`Pembayaran ${selectedPlan.name} gagal: ${errorMessages}.`); setFeedbackType('error');
+          setIsLoadingPurchase(null);
         },
         onClose: function () {
-          if (feedbackType !== 'success' && feedbackType !== 'warning' && feedbackType !== 'error'){
-            setFeedbackMessage('Anda menutup popup pembayaran.');
-            setFeedbackType('info');
+          if (isLoadingPurchase === planKey){
+            if (feedbackType !== 'success' && feedbackType !== 'warning' && feedbackType !== 'error') {
+                 setFeedbackMessage('Popup pembayaran ditutup sebelum selesai.'); setFeedbackType('info');
+            }
+            setIsLoadingPurchase(null);
           }
         },
       });
     } catch (error: unknown) {
-      console.error('Error during Midtrans purchase:', error);
       const message = error instanceof Error ? error.message : String(error);
-      setFeedbackMessage(`Gagal memulai pembayaran: ${message}`);
-      setFeedbackType('error');
-    } finally {
+      setFeedbackMessage(`Gagal memulai pembayaran: ${message}`); setFeedbackType('error');
       setIsLoadingPurchase(null);
     }
   };
 
-  // --- Helper function to parse scan results ---
   const parseScanResults = (results: string): Array<{ title: string; content: string; isSubItem?: boolean }> => {
-    if (!results || typeof results !== 'string') return [{ title: "Error", content: "Hasil analisis tidak valid atau kosong." }];
+    if (!results || typeof results !== 'string') return [{ title: "Error", content: "Hasil analisis tidak valid." }];
     const lines = results.split('\n');
     const parsed: Array<{ title: string; content: string; isSubItem?: boolean }> = [];
-    let currentTitle = "Informasi Umum"; // Default title for lines before the first proper title
+    let currentTitle = "Informasi Umum";
     let currentContent = "";
-    let inRekomendasiTrading = false;
-    const rekomendasiSubItems = ["Time Frame", "Gaya Trading", "Resiko", "Rekomendasi Aksi"];
-  
+    const mainTitles = ["Market Structure", "Candlestick Pattern", "Trend Market", "Signal Type", "Bandarmology", "Rekomendasi Trading", "Sentimen Pasar", "Sentimen Media sosial"];
+
     for (const line of lines) {
-      const trimmedLine = line.trim();
-      if (!trimmedLine) continue;
-  
-      const titleMatch = trimmedLine.match(/^([\w\s-]+):(.*)$/);
-  
-      if (titleMatch && titleMatch[1]) {
-        const newTitle = titleMatch[1].trim();
-        const newContent = titleMatch[2] ? titleMatch[2].trim() : "";
-  
-        if (currentContent) { // Push previous item if content exists
-          parsed.push({ title: currentTitle, content: currentContent.trim() });
-          currentContent = ""; // Reset content for the new item
+        const trimmedLine = line.trim();
+        if (!trimmedLine) continue;
+        let isNewTitle = false;
+        for (const mTitle of mainTitles) {
+            if (trimmedLine.toLowerCase().startsWith(mTitle.toLowerCase() + ":")) {
+                if (currentContent.trim() || (currentTitle !== "Informasi Umum")) {
+                    if (currentTitle.toLowerCase() === "rekomendasi trading" && !currentContent.trim() && parsed.length > 0 && parsed[parsed.length - 1].title.toLowerCase() !== "rekomendasi trading") {
+                        // Avoid pushing empty "Rekomendasi Trading"
+                    } else if (currentContent.trim()) {
+                        parsed.push({ title: currentTitle, content: currentContent.trim() });
+                    } else if (parsed.length > 0 && parsed[parsed.length -1].title === currentTitle && !parsed[parsed.length-1].content.trim()){
+                        // Avoid pushing duplicate empty titles
+                    } else if (currentTitle !== "Informasi Umum" && !currentContent.trim()) {
+                        parsed.push({ title: currentTitle, content: "" });
+                    }
+                }
+                const splitPoint = trimmedLine.indexOf(':');
+                currentTitle = trimmedLine.substring(0, splitPoint).trim();
+                currentContent = trimmedLine.substring(splitPoint + 1).trim();
+                isNewTitle = true;
+                if (currentTitle.toLowerCase() === "rekomendasi trading" && !currentContent.trim()) {
+                    // Wait for sub-items or more content
+                }
+                break;
+            }
         }
-        
-        currentTitle = newTitle;
-        currentContent = newContent; // Start new content with what's on the title line
-  
-        if (newTitle.toLowerCase() === "rekomendasi trading") {
-          inRekomendasiTrading = true;
-        } else if (inRekomendasiTrading && !rekomendasiSubItems.some(sub => newTitle.startsWith(sub))) {
-          // If we encounter a new main title after Rekomendasi Trading, end the section
-          inRekomendasiTrading = false; 
+        if (!isNewTitle) {
+            currentContent += (currentContent ? "\n" : "") + trimmedLine;
         }
-  
-      } else if (trimmedLine.startsWith("- ") && currentTitle) { 
-        // Handles list items within a section, typically under Rekomendasi Trading
-        if (currentContent) currentContent += '\n'; // Add newline if there's existing content for this title
-        currentContent += trimmedLine;
-      } else if (currentTitle) { // Line is part of the content of the current item
-        if (currentContent) currentContent += '\n';
-        currentContent += trimmedLine;
-      }
     }
-  
-    // Push the last item
-    if (currentTitle && currentContent.trim()) {
-      parsed.push({ title: currentTitle, content: currentContent.trim() });
-    } else if (currentTitle && !currentContent.trim() && parsed.length > 0 && parsed[parsed.length-1].title === currentTitle){
-      // If the last item had a title but no new content line, its content might be in parsed already.
-    } else if (currentTitle) {
-       // If there was a title but no content followed (e.g. "Rekomendasi Trading:" then sub-items)
-       // It might already be handled, or it indicates a section without direct content.
-       // For now, we ensure it doesn't create an empty content item if it's the last thing.
+    if (currentTitle && (currentContent.trim() || (currentTitle !== "Informasi Umum" && !currentContent.trim()) || (currentTitle.toLowerCase() === "rekomendasi trading" && currentContent.includes("- ")))) {
+        parsed.push({ title: currentTitle, content: currentContent.trim() });
+    } else if (parsed.length === 0 && results.trim()) { 
+        return [{ title: "Analisis Detail", content: results.trim() }];
     }
 
-    if (parsed.length === 0 && results.trim()) {
-      return [{ title: "Analisis Detail", content: results.trim() }];
-    }
-    if (parsed.length === 0 && !results.trim()) {
-        return [{ title: "Info", content: "Tidak ada hasil untuk ditampilkan." }];
-    }
-  
-    // Post-process to group Rekomendasi Trading sub-items
+    if (parsed.length === 0 && !results.trim()) return [{ title: "Info", content: "Tidak ada hasil untuk ditampilkan." }];
+    
     const finalParsed: Array<{ title: string; content: string; isSubItem?: boolean }> = [];
-    let rekomendasiBuffer: { title: string; content: string; isSubItem?: boolean } | null = null;
-  
+    let rekomendasiTradingContent = "";
+    let inRekomendasiSection = false;
+    // const rekomendasiSubItemsPrefixes = ["- time frame:", "- gaya trading:", "- resiko:", "- rekomendasi aksi:"]; // This line was unused
+
     for (const item of parsed) {
-      if (item.title.toLowerCase() === "rekomendasi trading") {
-        if (rekomendasiBuffer) finalParsed.push(rekomendasiBuffer); // Push previous if any
-        rekomendasiBuffer = { title: "Rekomendasi Trading", content: item.content, isSubItem: false };
-      } else if (rekomendasiBuffer && rekomendasiSubItems.some(sub => item.title.startsWith(sub))) {
-        rekomendasiBuffer.content += `\n\n**${item.title}:**\n${item.content}`;
-      } else {
-        if (rekomendasiBuffer) {
-          finalParsed.push(rekomendasiBuffer);
-          rekomendasiBuffer = null;
+        if (item.title.toLowerCase() === "rekomendasi trading") {
+            if (inRekomendasiSection && rekomendasiTradingContent.trim()) {
+                finalParsed.push({ title: "Rekomendasi Trading", content: rekomendasiTradingContent.trim() });
+            }
+            rekomendasiTradingContent = item.content; 
+            inRekomendasiSection = true;
+        } else if (inRekomendasiSection) { 
+            // If in Rekomendasi section and current item is NOT "Rekomendasi Trading",
+            // it means the previous "Rekomendasi Trading" block has ended.
+            if (rekomendasiTradingContent.trim()) {
+                finalParsed.push({ title: "Rekomendasi Trading", content: rekomendasiTradingContent.trim() });
+            }
+            rekomendasiTradingContent = ""; // Reset for potentially next Rekomendasi block
+            inRekomendasiSection = false;
+            finalParsed.push(item); // Push the current non-Rekomendasi item
         }
-        finalParsed.push(item);
-      }
+         else { // Not in Rekomendasi section and current item is not "Rekomendasi Trading"
+            finalParsed.push(item); 
+        }
     }
-    if (rekomendasiBuffer) finalParsed.push(rekomendasiBuffer);
-  
-    return finalParsed.length > 0 ? finalParsed : [{ title: "Analisis", content: "Tidak ada detail analisis." }];
+    // After loop, if still in Rekomendasi section, push the accumulated content
+    if (inRekomendasiSection && rekomendasiTradingContent.trim()) {
+        finalParsed.push({ title: "Rekomendasi Trading", content: rekomendasiTradingContent.trim() });
+    }
+    
+    if (finalParsed.length === 0 && parsed.length > 0) return parsed;
+    return finalParsed.length > 0 ? finalParsed : [{ title: "Analisis", content: "Tidak ada detail yang dapat ditampilkan." }];
   };
+
 
   return (
     <>
-      <main className="flex min-h-screen flex-col items-center justify-center p-4 font-sans relative">
+      <main className="flex min-h-screen flex-col items-center justify-center p-4 font-sans relative bg-background text-foreground">
+        {/* Scan Results Popup */}
         {showScanResultsPopup && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-4 backdrop-blur-md transition-opacity duration-300 ease-in-out">
-            <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg transform transition-all duration-300 ease-in-out scale-100 opacity-100">
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-4 backdrop-blur-md">
+            <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg">
               <div className="p-6 text-center border-b border-border">
                 <CheckCircle2 className="w-12 h-12 text-primary mx-auto mb-3" />
                 <h2 className="text-2xl font-semibold text-foreground">Hasil Analisis AI Trading</h2>
               </div>
-              
               <div className="p-6 max-h-[60vh] overflow-y-auto space-y-5 custom-scrollbar-dark">
                 {parseScanResults(scanResults).map((result, index) => (
-                  <div key={index} className={`p-4 rounded-lg border ${result.isSubItem ? 'ml-4 border-neutral-700 bg-neutral-800/30' : 'border-border bg-background/50 shadow-sm'}`}>
+                  <div key={index} className={`p-4 rounded-lg border ${result.isSubItem ? 'ml-4 bg-neutral-800/30 border-neutral-700' : 'bg-background/50 shadow-sm border-border'}`}>
                     <h3 className={`font-semibold text-lg mb-2 ${result.isSubItem ? 'text-primary/90' : 'text-primary'}`}>{result.title}</h3>
                     <div className="whitespace-pre-wrap break-words text-sm text-muted-foreground leading-relaxed">
                       {result.content.split('\n').map((line, lineIndex) => {
                         const boldMatch = line.match(/\*\*(.*?)\*\*/);
-                        if (boldMatch && boldMatch[1]) {
+                        if (boldMatch?.[1]) {
                           const parts = line.split(/\*\*(.*?)\*\*/);
-                          return (
-                            <React.Fragment key={lineIndex}>
-                              {parts.map((part, i) => 
-                                i % 2 === 1 ? <strong key={i} className="text-foreground">{part}</strong> : part
-                              )}
-                              <br/>
-                            </React.Fragment>
-                          );
+                          return (<React.Fragment key={lineIndex}>{parts.map((part, i) => i % 2 === 1 ? <strong key={i} className="text-foreground">{part}</strong> : part)}<br/></React.Fragment>);
                         }
-                        if (line.startsWith('- ')) {
-                          return (
-                            <span key={lineIndex} className="flex items-start">
-                              <span className="mr-2 mt-1 inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground"></span>
-                              <span>{line.substring(2)}</span>
-                              <br/>
-                            </span>
-                          );
-                        }
+                        if (line.startsWith('- ')) return (<span key={lineIndex} className="flex items-start pl-1"><span className="mr-2 mt-1.5 inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground flex-shrink-0"></span><span className="flex-grow">{line.substring(2)}</span><br/></span>);
                         return <React.Fragment key={lineIndex}>{line}<br/></React.Fragment>;
                       })}
                     </div>
                   </div>
                 ))}
-                {parseScanResults(scanResults).length === 0 && (
-                    <p className="text-muted-foreground text-center py-4">Tidak ada hasil analisis untuk ditampilkan.</p>
-                )}
+                {parseScanResults(scanResults).length === 0 && (<p className="text-muted-foreground text-center py-4">Tidak ada hasil untuk ditampilkan.</p>)}
               </div>
-
               <div className="p-6 border-t border-border">
-                <button 
-                  onClick={handleCloseScanResultsPopup} 
-                  className="w-full font-semibold py-3 px-6 rounded-lg text-base transition-opacity hover:opacity-90 bg-primary text-primary-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-card"
-                >
-                  Tutup & Lanjutkan
-                </button>
+                <button onClick={handleCloseScanResultsPopup} className="w-full btn-primary">Tutup & Lanjutkan</button>
               </div>
             </div>
           </div>
@@ -803,191 +964,177 @@ export default function ScannerPage() {
         {/* Monetag Ad Modal */}
         {showMonetagAdModal && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[101] p-4 backdrop-blur-md">
-            <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md transform transition-all duration-300 ease-in-out scale-100 opacity-100">
+            <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md relative">
               <div className="p-6 text-center border-b border-border">
                 <h2 className="text-xl font-semibold text-foreground">Penawaran Sponsor</h2>
-                 <button 
-                    onClick={() => setShowMonetagAdModal(false)} 
-                    className="absolute top-3 right-3 p-1.5 bg-transparent rounded-full text-muted-foreground hover:bg-neutral-700/50 transition-colors z-30" 
-                    aria-label="Tutup iklan">
-                    <XCircle className="w-6 h-6" />
-                </button>
+                <button onClick={() => setShowMonetagAdModal(false)} className="absolute top-3 right-3 btn-icon text-muted-foreground hover:text-foreground" aria-label="Tutup iklan"><XCircle className="w-6 h-6" /></button>
               </div>
-              <div className="p-6 min-h-[250px] flex items-center justify-center">
-                {/* 
-                  !!!! PASTE YOUR MONETAG AD SCRIPT/CODE HERE !!!!
-                  For example, if it's a script tag:
-                  <div dangerouslySetInnerHTML={{ __html: \`
-                    <script type="text/javascript">
-                      // Your Monetag ad zone script
-                    </script>
-                  \`}} />
-                  Or if it's an iframe or other embed code.
-                  Make sure it's responsive or fits within this modal.
-                */}
-                <p className="text-muted-foreground">Monetag Ad Placeholder - Anda perlu mengganti ini dengan kode iklan Monetag Anda.</p>
+              <div className="p-6 min-h-[250px] flex flex-col items-center justify-center">
+                <div id="monetag-ad-container-scannerpage" className="w-full h-full flex items-center justify-center bg-neutral-700/20 rounded-md text-center">
+                   <p className="text-muted-foreground text-sm p-4">Konten sponsor akan ditampilkan di sini.<br/>(Tempatkan kode iklan Monetag Anda)</p>
+                </div>
+                <p className="text-muted-foreground text-xs mt-2 text-center">Memuat iklan... Jika tidak muncul, pastikan konfigurasi Monetag sudah benar dan tidak ada adblocker yang aktif.</p>
               </div>
               <div className="p-4 border-t border-border text-center">
-                <button 
-                  onClick={() => setShowMonetagAdModal(false)} 
-                  className="font-semibold py-2 px-5 rounded-lg text-sm transition-opacity hover:opacity-90 bg-primary text-primary-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-card"
-                >
-                  Tutup Iklan
-                </button>
+                <button onClick={() => setShowMonetagAdModal(false)} className="btn-primary text-sm">Tutup Iklan</button>
               </div>
             </div>
           </div>
         )}
 
-        <div className="bg-card border border-border w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden transform transition-all duration-500 hover:shadow-neutral-800/70">
-          <div className="bg-neutral-800/50 p-5 sm:p-6 text-center border-b border-border">
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">Pemindai Analisis Trading</h1>
-            <p className="text-xs sm:text-sm mt-1 text-muted-foreground">Gunakan kamera atau unggah gambar chart untuk analisis AI.</p>
-          </div>
-
-          <div className="p-4 sm:p-5 bg-card">
-            <div className="flex items-center justify-center space-x-2 bg-background p-1 rounded-lg shadow-inner border border-border">
-              <button 
-                onClick={() => setIsProMode(false)} 
-                className={`flex-1 py-2 px-3 rounded-md text-xs sm:text-sm font-semibold transition-all duration-300 ease-out flex items-center justify-center space-x-1.5 
-                            ${!isProMode ? 'bg-primary text-primary-foreground shadow-md' : 'text-muted-foreground hover:bg-neutral-700/60'}`}>
-                <ShieldOff className={`w-4 h-4 ${!isProMode ? 'text-primary-foreground' : 'text-primary'}`} />
-                <span>free & ads</span>
-              </button>
-              <button 
-                onClick={() => setIsProMode(true)} 
-                className={`flex-1 py-2 px-3 rounded-md text-xs sm:text-sm font-semibold transition-all duration-300 ease-out flex items-center justify-center space-x-1.5 
-                            ${isProMode ? 'bg-primary text-primary-foreground shadow-md' : 'text-muted-foreground hover:bg-neutral-700/60'}`}>
-                <Star className={`w-4 h-4 ${isProMode ? 'text-primary' : 'text-primary'}`} />
-                <span>Pro & No ads</span>
-              </button>
+        {/* Camera Error Modal */}
+        {showCameraErrorModal && (
+            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[102] p-4 backdrop-blur-md">
+                <div className="bg-card border border-red-500 rounded-xl shadow-2xl w-full max-w-sm p-6">
+                    <div className="text-center">
+                        <VideoOff className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                        <h2 className="text-xl font-semibold text-foreground mb-2">Kesalahan Kamera</h2>
+                        <p className="text-sm text-muted-foreground mb-6 whitespace-pre-line">{cameraError || "Terjadi kesalahan saat mengakses kamera."}</p>
+                        <button onClick={() => setShowCameraErrorModal(false)} className="w-full btn-danger text-sm">Mengerti</button>
+                    </div>
+                </div>
             </div>
+        )}
+
+        {/* Upgrade Modal */}
+        {showUpgradeModal && supabaseUser && !isProMode && (
+            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[102] p-4 backdrop-blur-md">
+                <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md">
+                    <div className="p-6 text-center border-b border-border">
+                        <Sparkles className="w-10 h-10 text-primary mx-auto mb-3" />
+                        <h2 className="text-2xl font-semibold text-foreground">Upgrade ke Scanner Pro+</h2>
+                        <p className="text-sm text-muted-foreground mt-1">Nikmati fitur penuh, tanpa batas scan harian, dan bebas iklan!</p>
+                    </div>
+                    <div className="p-6 space-y-4 max-h-[50vh] overflow-y-auto custom-scrollbar-dark">
+                        {(Object.keys(paymentPlans) as PaymentPlanKey[]).map((planKey) => {
+                            const plan = paymentPlans[planKey];
+                            const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || "YOUR_BOT_USERNAME";
+                            const telegramDeepLink = `https://t.me/${botUsername}?start=subscribe_${plan.telegramPlanId}`;
+                            const isLoadingThisPlan = isLoadingPurchase === planKey;
+                            return (
+                                <div key={plan.id} className="p-4 border border-border rounded-lg bg-background/40 shadow-sm hover:border-primary/50 transition-colors">
+                                    <h3 className="text-lg font-semibold text-primary">{plan.name}</h3>
+                                    <p className="text-xs text-muted-foreground mb-1">{plan.duration} - {plan.features.join(', ')}</p>
+                                    <div className="flex flex-col sm:flex-row gap-2 mt-3">
+                                        <button onClick={() => handlePurchase(planKey)} disabled={isLoadingThisPlan || (isLoadingPurchase !== null && isLoadingPurchase !== planKey)} className={`btn-primary flex-1 text-sm ${isLoadingThisPlan ? 'opacity-70 cursor-wait' : ''}`}>
+                                            {isLoadingThisPlan ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Crown className="mr-2 h-4 w-4" />}
+                                            Bayar Rp {plan.midtransPrice.toLocaleString('id-ID')} (Web)
+                                        </button>
+                                        <a href={telegramDeepLink} target="_blank" rel="noopener noreferrer" className={`btn-secondary flex-1 text-sm bg-sky-500 hover:bg-sky-600 text-white ${(isLoadingPurchase !== null) ? 'opacity-70 pointer-events-none cursor-not-allowed' : ''}`} onClick={(e) => { if(isLoadingPurchase !== null) e.preventDefault(); }}>
+                                            <Star className="mr-2 h-4 w-4" /> Bayar {plan.telegramStars} Stars (TG)
+                                        </a>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <div className="p-6 border-t border-border space-y-3">
+                        {dailyScanCount < FREE_SCAN_LIMIT && (
+                             <button onClick={async () => { setShowUpgradeModal(false); if (dailyScanCount < FREE_SCAN_LIMIT) await handleActualScanOrOpenCamera(); else { setFeedbackMessage(`Limit scan harian (${FREE_SCAN_LIMIT}) tercapai.`); setFeedbackType('warning');}}}
+                                className="w-full btn-neutral text-sm" disabled={isLoadingPurchase !== null || isScanningActive}>
+                                Lanjutkan Gratis ({FREE_SCAN_LIMIT - dailyScanCount} scan tersisa)
+                            </button>
+                        )}
+                        {dailyScanCount >= FREE_SCAN_LIMIT && (
+                             <p className="text-xs text-yellow-500 text-center">Limit scan harian gratis Anda telah habis.</p>
+                        )}
+                        <button onClick={() => setShowUpgradeModal(false)} className="w-full btn-outline text-sm" disabled={isLoadingPurchase !== null}>
+                            Tutup
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Main UI Card */}
+        <div className="bg-card border border-border w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+          <div className="bg-neutral-800/50 p-5 sm:p-6 text-center border-b border-border">
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Pemindai Analisis Trading</h1>
+            <p className="text-xs sm:text-sm mt-1 text-muted-foreground">Unggah gambar chart trading untuk analisis AI.</p>
           </div>
-          
           <div className="p-5 sm:p-6 bg-card">
-            <div
-              className={`relative mx-auto w-full aspect-[4/3] sm:aspect-square max-w-[320px] sm:max-w-[280px] rounded-xl overflow-hidden border-2 flex items-center justify-center transition-all duration-300 bg-background 
-              ${(isScanningActive) && !isCameraOpen ? 'border-primary shadow-xl shadow-primary/20' : 'border-border'} 
-              ${isCameraOpen ? 'border-primary border-solid' : 'border-dashed'} 
-              ${isProMode && !isScanningActive && !isCameraOpen ? 'border-primary border-solid shadow-lg shadow-primary/10' : ''} 
+            <div className={`relative mx-auto w-full aspect-[4/3] max-w-[320px] rounded-xl border-2 flex items-center justify-center bg-background overflow-hidden transition-all duration-300
+              ${(isScanningActive && !isCameraOpen) ? 'border-primary shadow-lg shadow-primary/20' : 'border-border'}
+              ${isCameraOpen ? 'border-primary' : 'border-dashed'}
               ${imagePreviewUrl ? 'border-solid border-primary' : (isCameraOpen ? 'border-solid border-primary' : 'border-dashed border-border')}`}
             >
               {isCameraOpen ? (
                   <>
-                    <video ref={videoRef} className="w-full h-full object-cover rounded-xl" playsInline muted autoPlay />
+                    <video ref={videoRef} className="w-full h-full object-cover" playsInline muted autoPlay />
                     <div className="absolute bottom-3 left-1/2 transform -translate-x-1/2 flex space-x-2 z-20">
-                      <button 
-                        onClick={takePhoto} 
-                        disabled={!videoRef.current?.srcObject || !videoRef.current?.videoWidth || videoRef.current.readyState < videoRef.current.HAVE_METADATA}
-                        className="font-semibold py-2.5 px-5 rounded-full text-sm shadow-md flex items-center backdrop-blur-sm bg-primary/80 text-primary-foreground hover:bg-primary/90 border-2 border-primary focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60 disabled:cursor-not-allowed">
+                      <button onClick={takePhoto} disabled={!videoRef.current?.srcObject || isScanningActive} className="btn-primary btn-sm bg-opacity-80 backdrop-blur-sm hover:bg-opacity-100">
                         <Camera className="w-5 h-5 mr-2" />Ambil Foto
                       </button>
-                      <button 
-                        onClick={closeCamera} 
-                        className="font-semibold p-2.5 rounded-full text-sm shadow-md flex items-center backdrop-blur-sm bg-black/50 text-white hover:bg-black/70 border-2 border-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary" aria-label="Tutup Kamera">
+                      <button onClick={closeCamera} disabled={isScanningActive} className="btn-icon bg-black/50 hover:bg-black/70 text-white backdrop-blur-sm" aria-label="Tutup Kamera">
                         <XCircle className="w-5 h-5" />
                       </button>
                     </div>
                   </>
               ) : imagePreviewUrl ? (
-                <Image src={imagePreviewUrl} alt="Pratinjau Unggahan" layout="fill" objectFit="contain" className="rounded-xl" unoptimized={true} />
+                  <Image
+                    src={imagePreviewUrl}
+                    alt="Pratinjau Gambar"
+                    fill
+                    style={{ objectFit: 'contain' }}
+                    className="rounded-xl" 
+                    unoptimized={true} 
+                  />
               ) : (
-                <div className="flex flex-col items-center justify-center text-center p-4">
-                  <Camera className={`h-16 w-16 sm:h-20 sm:w-20 transition-opacity duration-300 mb-3 ${(isScanningActive) ? 'text-primary opacity-40' : 'text-muted-foreground opacity-70'}`} />
-                  <p className="text-sm text-muted-foreground">Klik &quot;{mainButtonText()}&quot;<br/>atau unggah gambar.</p>
+                <div className="text-center p-4 select-none">
+                  <Camera className={`h-16 w-16 mb-3 transition-colors ${isScanningActive ? 'text-primary opacity-40' : 'text-muted-foreground opacity-70'}`} />
+                  <p className="text-sm text-muted-foreground">Klik &quot;{mainButtonText()}&quot; di bawah, atau unggah gambar.</p>
                 </div>
               )}
               {!isCameraOpen && !imagePreviewUrl && !isScanningActive && (
-                  <>
-                    <div className={`absolute top-2 left-2 w-6 h-6 sm:w-8 sm:h-8 border-t-[3px] border-l-[3px] rounded-tl-lg ${isProMode ? 'border-primary' : 'border-border'}`}></div>
-                    <div className={`absolute top-2 right-2 w-6 h-6 sm:w-8 sm:h-8 border-t-[3px] border-r-[3px] rounded-tr-lg ${isProMode ? 'border-primary' : 'border-border'}`}></div>
-                    <div className={`absolute bottom-2 left-2 w-6 h-6 sm:w-8 sm:h-8 border-b-[3px] border-l-[3px] rounded-bl-lg ${isProMode ? 'border-primary' : 'border-border'}`}></div>
-                    <div className={`absolute bottom-2 right-2 w-6 h-6 sm:w-8 sm:h-8 border-b-[3px] border-r-[3px] rounded-br-lg ${isProMode ? 'border-primary' : 'border-border'}`}></div>
-                  </>
+                  <> <div className={`corner top-left ${isProMode ? 'border-primary/70' : 'border-border/70'}`}></div> <div className={`corner top-right ${isProMode ? 'border-primary/70' : 'border-border/70'}`}></div> <div className={`corner bottom-left ${isProMode ? 'border-primary/70' : 'border-border/70'}`}></div> <div className={`corner bottom-right ${isProMode ? 'border-primary/70' : 'border-border/70'}`}></div> </>
               )}
               {imagePreviewUrl && !isScanningActive && !isCameraOpen && (
-                <button onClick={handleRemoveImage} className="absolute top-2 right-2 p-1.5 bg-black/60 rounded-full text-white hover:bg-black/80 transition-colors z-20 focus:outline-none focus:ring-2 focus:ring-primary" aria-label="Buang gambar"><XCircle className="w-5 h-5 sm:w-6 sm:h-6" /></button>
+                <button onClick={handleRemoveImage} className="absolute top-2 right-2 btn-icon bg-black/60 hover:bg-black/80 text-white z-20" aria-label="Buang gambar"><XCircle className="w-5 h-5" /></button>
               )}
-              {(isScanningActive) && (
-                  <div className="absolute inset-0 w-full h-full overflow-hidden rounded-xl bg-black/30 flex items-center justify-center z-10 backdrop-blur-sm"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>
-              )}
-              <canvas ref={canvasRef} className="hidden"></canvas>
+              {isScanningActive && (<div className="absolute inset-0 bg-black/30 flex-center z-10 backdrop-blur-sm rounded-xl"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>)}
+              <canvas ref={canvasRef} className="hidden" aria-hidden="true"></canvas>
             </div>
           </div>
-          
           <div className="px-5 sm:px-6 pb-3 sm:pb-4 space-y-3 bg-card">
-            <button 
-                onClick={handleMainScanClick} 
-                disabled={mainButtonDisabled}
-                className={`w-full font-semibold py-3 px-6 rounded-xl text-base sm:text-lg transition-all duration-300 ease-in-out transform focus:outline-none focus:ring-4 focus:ring-opacity-50 flex items-center justify-center 
-                            ${mainButtonDisabled ? 'bg-neutral-700 text-muted-foreground cursor-not-allowed' : 'bg-primary text-primary-foreground hover:opacity-90 hover:shadow-lg focus:ring-primary/50'}`}>
-              { (isScanningActive) && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
-              {mainButtonText()}
+            <button onClick={handleMainScanClick} disabled={mainButtonDisabled || isCameraOpen} className={`w-full btn-primary text-base sm:text-lg ${(mainButtonDisabled || isCameraOpen) ? 'opacity-60 cursor-not-allowed' : ''}`}>
+              {(isScanningActive && !isCameraOpen) && <Loader2 className="mr-2 h-5 w-5 animate-spin" />} {mainButtonText()}
             </button>
-            <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" ref={fileInputRef} id="imageUploadInputScannerPage" />
-            <button 
-                onClick={() => { if (isCameraOpen) closeCamera(); fileInputRef.current?.click(); }} 
-                disabled={mainButtonDisabled}
-                className={`w-full font-semibold py-2.5 px-6 rounded-xl text-sm sm:text-base transition-all duration-300 ease-in-out transform focus:outline-none focus:ring-4 focus:ring-opacity-50 flex items-center justify-center space-x-2 
-                            ${mainButtonDisabled ? 'bg-neutral-800 text-muted-foreground cursor-not-allowed' : 'bg-neutral-700 text-foreground hover:bg-neutral-600 hover:shadow-md focus:ring-neutral-500'}`}>
-              <UploadCloud className="w-4 h-4 sm:w-5 sm:h-5" /><span>{imagePreviewUrl ? 'Ganti Gambar' : (isCameraOpen ? 'Tutup Kamera & Unggah' : 'Unggah Gambar Chart')}</span>
+            <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" ref={fileInputRef} id="imageUploadInputScannerPage" aria-label="Unggah gambar"/>
+            <button onClick={() => { if (isCameraOpen) closeCamera(); fileInputRef.current?.click(); }} disabled={mainButtonDisabled || isCameraOpen} className={`w-full btn-neutral text-sm sm:text-base ${(mainButtonDisabled || isCameraOpen) ? 'opacity-60 cursor-not-allowed' : ''}`}>
+              <UploadCloud className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />{imagePreviewUrl ? 'Ganti Gambar' : (isCameraOpen ? 'Tutup & Unggah Gambar' : 'Unggah Gambar')}
             </button>
           </div>
-
-          {/* Feedback Message Section - Themed */}
           {feedbackMessage && (
-            <div className={`mx-5 sm:mx-6 mb-5 sm:mb-6 p-3.5 sm:p-4 border-l-4 rounded-md shadow-md flex items-start space-x-3 ${feedbackStyles.bgColorClass} ${feedbackStyles.borderColorClass}`}>
+            <div className={`mx-5 sm:mx-6 mb-5 sm:mb-6 p-3.5 sm:p-4 border-l-4 rounded-md shadow-md flex items-start space-x-3 ${feedbackStyles.bgColorClass} ${feedbackStyles.borderColorClass}`} role="alert">
               <div className="flex-shrink-0 pt-0.5">{feedbackStyles.icon}</div>
-              <p className={`text-sm ${feedbackStyles.textColorClass}`}>{feedbackMessage}{cameraError && <span className="block mt-1 text-xs">{cameraError}</span>}</p>
+              <p className={`text-sm ${feedbackStyles.textColorClass}`}>{feedbackMessage}</p>
             </div>
           )}
         </div>
-        
-        {/* Payment Plans Section */}
-        {!isLoadingAuth && supabaseUser && !isProMode && (
+
+        {!isLoadingAuth && supabaseUser && !isProMode && supabaseUrl && supabaseAnonKey && (
           <div className="mt-8 w-full max-w-sm bg-card border border-border rounded-2xl shadow-xl p-6">
-            <h2 className="text-2xl font-semibold text-center text-foreground mb-2 flex items-center justify-center">
-              <Sparkles className="w-7 h-7 mr-2 text-primary" /> Upgrade ke Scanner Pro
+            <h2 className="text-2xl font-semibold text-center text-foreground mb-2 flex-center">
+              <Sparkles className="w-7 h-7 mr-2 text-primary" /> Paket Scanner Pro
             </h2>
-            <p className="text-center text-muted-foreground mb-6 text-sm">Nikmati semua fitur tanpa batas dan tanpa iklan.</p>
-            
+            <p className="text-center text-muted-foreground mb-6 text-sm">Upgrade untuk scan tanpa batas, bebas iklan, dan fitur premium lainnya.</p>
             <div className="space-y-4">
               {(Object.keys(paymentPlans) as PaymentPlanKey[]).map((planKey) => {
                 const plan = paymentPlans[planKey];
                 const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || "YOUR_BOT_USERNAME";
                 const telegramDeepLink = `https://t.me/${botUsername}?start=subscribe_${plan.telegramPlanId}`;
                 const isLoadingThisPlan = isLoadingPurchase === planKey;
-
                 return (
-                  <div key={plan.id} className="p-4 border border-border rounded-lg bg-background/30 shadow-sm">
+                  <div key={plan.id} className="p-4 border border-border rounded-lg bg-background/30 shadow-sm hover:border-primary/50 transition-colors">
                     <h3 className="text-lg font-semibold text-primary">{plan.name}</h3>
                     <p className="text-sm text-muted-foreground mb-1">{plan.duration} - {plan.features.join(', ')}</p>
-                    
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mt-3 space-y-2 sm:space-y-0 sm:space-x-2">
-                      <button
-                        onClick={() => handlePurchase(planKey)}
-                        disabled={isLoadingThisPlan || isLoadingPurchase !== null}
-                        className={`w-full sm:w-auto flex-1 font-semibold py-2 px-4 rounded-md text-sm transition-colors flex items-center justify-center
-                                    ${isLoadingThisPlan ? 'bg-neutral-600 text-muted-foreground' : 'bg-primary text-primary-foreground hover:bg-primary/90'}
-                                    disabled:opacity-70 disabled:cursor-not-allowed`}
-                      >
-                        {isLoadingThisPlan ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Crown className="mr-2 h-4 w-4" />
-                        )}
-                        Bayar Rp {plan.midtransPrice.toLocaleString('id-ID')} (Web)
+                    <div className="flex flex-col sm:flex-row gap-2 mt-3">
+                      <button onClick={() => handlePurchase(planKey)} disabled={isLoadingThisPlan || (isLoadingPurchase !== null && isLoadingPurchase !== planKey)} className={`btn-primary flex-1 text-sm ${isLoadingThisPlan ? 'opacity-70 cursor-wait' : ''}`}>
+                        {isLoadingThisPlan ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Crown className="mr-2 h-4 w-4" />}
+                        Bayar Rp {plan.midtransPrice.toLocaleString('id-ID')}
                       </button>
-                      <a 
-                        href={telegramDeepLink}
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className={`w-full sm:w-auto flex-1 font-semibold py-2 px-4 rounded-md text-sm transition-colors flex items-center justify-center text-center
-                                    bg-sky-500 text-white hover:bg-sky-600
-                                    ${isLoadingPurchase !== null ? 'opacity-70 cursor-not-allowed pointer-events-none' : ''}`}
-                        onClick={(e) => { if(isLoadingPurchase !== null) e.preventDefault(); }}
-                      >
-                        <Star className="mr-2 h-4 w-4" /> Bayar {plan.telegramStars} Stars (Telegram)
+                      <a href={telegramDeepLink} target="_blank" rel="noopener noreferrer" className={`btn-secondary flex-1 text-sm bg-sky-500 hover:bg-sky-600 text-white ${(isLoadingPurchase !== null) ? 'opacity-70 pointer-events-none cursor-not-allowed' : ''}`} onClick={(e) => { if(isLoadingPurchase !== null) e.preventDefault(); }}>
+                        <Star className="mr-2 h-4 w-4" /> Bayar {plan.telegramStars} Stars
                       </a>
                     </div>
                   </div>
@@ -996,31 +1143,73 @@ export default function ScannerPage() {
             </div>
           </div>
         )}
-
         <footer className="mt-6 text-center">
-          <p className="text-xs text-muted-foreground">{isProMode ? "Anda menggunakan Mode Pro." : 
-            `Mode Gratis: ${dailyScanCount}/${FREE_SCAN_LIMIT} scan hari ini. ${dailyScanCount >= FREE_SCAN_LIMIT ? 'Limit tercapai.' : ''}`
-          }</p>
+          <p className="text-xs text-muted-foreground">
+            {(!supabaseUrl || !supabaseAnonKey) ? "Layanan Supabase tidak terkonfigurasi." :
+              (isProMode && proExpiryDate ? `Mode Pro aktif hingga ${proExpiryDate}.` :
+                (supabaseUser ? `Mode Gratis: ${dailyScanCount}/${FREE_SCAN_LIMIT} scan hari ini. ${dailyScanCount >= FREE_SCAN_LIMIT ? 'Limit tercapai.' : ''}` :
+                  (isLoadingAuth ? 'Memuat status...' : 'Silakan login untuk memulai.')
+                ))
+            }
+          </p>
         </footer>
 
         <style jsx global>{`
-          .custom-scrollbar-dark::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
+          :root {
+            --card: hsl(222.2, 84%, 4.9%);
+            --muted-foreground: hsl(215, 20.2%, 65.1%);
+            --primary: hsl(210, 40%, 98%);
+            --primary-foreground: hsl(222.2, 47.4%, 11.2%);
+            --background: hsl(222.2, 84%, 4.9%);
+            --border: hsl(217.2, 32.6%, 17.5%);
+            --foreground: hsl(210, 40%, 98%);
+            --destructive: hsl(0, 84.2%, 60.2%);
+            --destructive-foreground: hsl(0, 0%, 98%);
           }
-          .custom-scrollbar-dark::-webkit-scrollbar-track {
-            background: var(--color-card, #1E1E1E); /* Fallback */
-            border-radius: 10px;
+          body {
+            background-color: var(--background);
+            color: var(--foreground);
           }
-          .custom-scrollbar-dark::-webkit-scrollbar-thumb {
-            background-color: var(--color-muted-foreground, #A0A0A0); /* Fallback */
-            border-radius: 10px;
-            border: 2px solid var(--color-card, #1E1E1E); /* Fallback */
-          }
-          .custom-scrollbar-dark::-webkit-scrollbar-thumb:hover {
-            background-color: var(--color-primary, #FFFFFF); /* Fallback */
-          }
-          @keyframes scan-line-animation {0% { transform: translateY(-10%); opacity: 0.6; } 50% { transform: translateY(calc(100% + 5px)); opacity: 1; } 100% { transform: translateY(-10%); opacity: 0.6;}}
+          .custom-scrollbar-dark::-webkit-scrollbar { width: 8px; height: 8px; }
+          .custom-scrollbar-dark::-webkit-scrollbar-track { background: hsl(var(--card)/0.5); border-radius: 10px; }
+          .custom-scrollbar-dark::-webkit-scrollbar-thumb { background-color: hsl(var(--muted-foreground)); border-radius: 10px; border: 2px solid hsl(var(--card)/0.5); }
+          .custom-scrollbar-dark::-webkit-scrollbar-thumb:hover { background-color: hsl(var(--primary)/0.8); }
+
+          .btn { padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 600; transition: all 0.2s ease-in-out; display: inline-flex; align-items: center; justify-content: center; line-height: 1.25; border: 1px solid transparent; }
+          .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+          .btn-primary { background-color: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+          .btn-primary:hover:not(:disabled) { background-color: hsl(var(--primary)/0.9); opacity:0.9}
+          .btn-primary.btn-sm { padding: 0.4rem 0.8rem; font-size: 0.875rem; }
+
+          .btn-neutral { background-color: hsl(var(--muted-foreground) / 0.2); color: var(--foreground); border-color: hsl(var(--muted-foreground) / 0.3); }
+          .btn-neutral:hover:not(:disabled) { background-color: hsl(var(--muted-foreground) / 0.3); }
+
+          .btn-outline { border: 1px solid var(--border); color: var(--foreground); background-color: transparent; }
+          .btn-outline:hover:not(:disabled) { background-color: hsl(var(--muted-foreground) / 0.1); border-color: hsl(var(--muted-foreground) / 0.3); }
+
+          .btn-danger { background-color: var(--destructive); color: var(--destructive-foreground); border-color: var(--destructive); }
+          .btn-danger:hover:not(:disabled) { background-color: hsl(var(--destructive)/0.9); }
+
+          .btn-secondary { background-color: #0088cc; color: white; border-color: #0088cc; }
+          .btn-secondary:hover:not(:disabled) { background-color: #0077b3; }
+
+          .btn-icon { padding: 0.5rem; border-radius: 9999px; background-color: transparent; border: none; }
+          .btn-icon:hover:not(:disabled) { background-color: hsl(var(--muted-foreground) / 0.2); }
+          .btn-icon.backdrop-blur-sm { backdrop-filter: blur(4px); }
+
+          .btn-toggle { flex: 1; padding: 0.5rem 0.75rem; border-radius: 0.375rem; font-size: 0.875rem; line-height: 1.25rem; font-weight: 600; transition: all 0.3s ease-out; display: flex; align-items: center; justify-content: center; border: 1px solid transparent; background-color: transparent; }
+          .btn-toggle.active { background-color: var(--primary); color: var(--primary-foreground); box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px 0 rgba(0,0,0,0.06); border-color: var(--primary); }
+          .btn-toggle:not(.active) { color: var(--muted-foreground); border-color: var(--border); }
+          .btn-toggle:not(.active):hover:not(:disabled) { background-color: hsl(var(--muted-foreground) / 0.1); border-color: hsl(var(--muted-foreground) / 0.2); }
+
+          .corner { position: absolute; width: 1.5rem; height: 1.5rem; border-width: 3px; transition: border-color 0.3s; }
+          .corner.top-left { top: 0.5rem; left: 0.5rem; border-top-style: solid; border-left-style: solid; border-top-left-radius: 0.375rem; }
+          .corner.top-right { top: 0.5rem; right: 0.5rem; border-top-style: solid; border-right-style: solid; border-top-right-radius: 0.375rem; }
+          .corner.bottom-left { bottom: 0.5rem; left: 0.5rem; border-bottom-style: solid; border-left-style: solid; border-bottom-left-radius: 0.375rem; }
+          .corner.bottom-right { bottom: 0.5rem; right: 0.5rem; border-bottom-style: solid; border-right-style: solid; border-bottom-right-radius: 0.375rem; }
+
+          .flex-center { display: flex; align-items: center; justify-content: center; }
         `}</style>
       </main>
     </>

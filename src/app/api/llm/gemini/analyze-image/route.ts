@@ -2,7 +2,7 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, Part, HarmProbabi
 import { NextResponse } from 'next/server';
 import * as jose from 'jose'; // Import jose
 
-const MODEL_NAME = "gemini-2.0-flash-latest"; // Corrected model name as per previous context, ensure this is what you intend. Gemini 2.0 flash might be "gemini-2.0-flash-latest"
+const MODEL_NAME = "gemini-2.0-flash"; // Corrected model name as per previous context, ensure this is what you intend. Gemini 2.0 flash might be "gemini-2.0-flash-latest"
 
 // Helper function to verify JWT
 async function verifyToken(token: string): Promise<jose.JWTPayload | null> {
