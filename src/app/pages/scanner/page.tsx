@@ -1111,38 +1111,6 @@ Sentimen Media sosial: Netral cenderung positif`
             </div>
           )}
         </div>
-
-        {!isLoadingAuth && supabaseUser && !isProMode && supabaseUrl && supabaseAnonKey && (
-          <div className="mt-8 w-full max-w-sm bg-card border border-border rounded-2xl shadow-xl p-6">
-            <h2 className="text-2xl font-semibold text-center text-foreground mb-2 flex-center">
-              <Sparkles className="w-7 h-7 mr-2 text-primary" /> Paket Scanner Pro
-            </h2>
-            <p className="text-center text-muted-foreground mb-6 text-sm">Upgrade untuk scan tanpa batas, bebas iklan, dan fitur premium lainnya.</p>
-            <div className="space-y-4">
-              {(Object.keys(paymentPlans) as PaymentPlanKey[]).map((planKey) => {
-                const plan = paymentPlans[planKey];
-                const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || "YOUR_BOT_USERNAME";
-                const telegramDeepLink = `https://t.me/${botUsername}?start=subscribe_${plan.telegramPlanId}`;
-                const isLoadingThisPlan = isLoadingPurchase === planKey;
-                return (
-                  <div key={plan.id} className="p-4 border border-border rounded-lg bg-background/30 shadow-sm hover:border-primary/50 transition-colors">
-                    <h3 className="text-lg font-semibold text-primary">{plan.name}</h3>
-                    <p className="text-sm text-muted-foreground mb-1">{plan.duration} - {plan.features.join(', ')}</p>
-                    <div className="flex flex-col sm:flex-row gap-2 mt-3">
-                      <button onClick={() => handlePurchase(planKey)} disabled={isLoadingThisPlan || (isLoadingPurchase !== null && isLoadingPurchase !== planKey)} className={`btn-primary flex-1 text-sm ${isLoadingThisPlan ? 'opacity-70 cursor-wait' : ''}`}>
-                        {isLoadingThisPlan ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Crown className="mr-2 h-4 w-4" />}
-                        Bayar Rp {plan.midtransPrice.toLocaleString('id-ID')}
-                      </button>
-                      <a href={telegramDeepLink} target="_blank" rel="noopener noreferrer" className={`btn-secondary flex-1 text-sm bg-sky-500 hover:bg-sky-600 text-white ${(isLoadingPurchase !== null) ? 'opacity-70 pointer-events-none cursor-not-allowed' : ''}`} onClick={(e) => { if(isLoadingPurchase !== null) e.preventDefault(); }}>
-                        <Star className="mr-2 h-4 w-4" /> Bayar {plan.telegramStars} Stars
-                      </a>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
         <footer className="mt-6 text-center">
           <p className="text-xs text-muted-foreground">
             {(!supabaseUrl || !supabaseAnonKey) ? "Layanan Supabase tidak terkonfigurasi." :
