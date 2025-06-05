@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
 
-const MODEL_NAME = "gemini-2.0-flash"; 
+const MODEL_NAME = "gemini-1.5-flash-latest"; 
 
 
 export async function POST(req: Request) {
