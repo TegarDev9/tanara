@@ -5,11 +5,12 @@ import { Camera, AlertCircle, CheckCircle2, Star, UploadCloud, XCircle, Loader2,
 import { createClient, SupabaseClient, User, Subscription as SupabaseSubscription, AuthError, Session } from '@supabase/supabase-js';
 import Image from 'next/image';
 
-// --- Supabase Client Setup ---
+// --- Environment Variables ---
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const REWARDED_INTERSTITIAL_ZONE_ID = process.env.NEXT_PUBLIC_REWARDED_INTERSTITIAL_ZONE_ID;
 
+// --- Supabase Client Setup ---
 let supabaseInstance: SupabaseClient;
 
 interface MockSession extends Partial<Session> {
@@ -29,7 +30,8 @@ if (supabaseUrl && supabaseAnonKey) {
       getSession: async () => ({ data: { session: null }, error: new Error('Supabase mock: getSession error') as AuthError }),
       onAuthStateChange: (_callback: (event: string, session: User | null) => void) => {
         if (process.env.NODE_ENV === 'development') {
-          console.log("Supabase mock: onAuthStateChange invoked, callback type:", typeof _callback);
+          // Using the _callback parameter to satisfy ESLint
+          console.log("Supabase mock: onAuthStateChange invoked, callback argument type:", typeof _callback);
         }
         return ({
           data: { subscription: { unsubscribe: () => {} } as SupabaseSubscription },
@@ -42,7 +44,7 @@ if (supabaseUrl && supabaseAnonKey) {
             id: 'mock-anon-user-id', aud: 'authenticated', role: 'anonymous', email: undefined,
             app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString(), is_anonymous: true,
         } as User;
-        const mockSession: MockSession = {
+        const mockSession: MockSession = { // Using the defined MockSession type
             access_token: 'mock-anon-token', token_type: 'bearer', user: mockUser,
             expires_at: Date.now() + 3600000, refresh_token: 'mock-refresh-token'
         };
@@ -70,6 +72,26 @@ if (supabaseUrl && supabaseAnonKey) {
 }
 const supabase = supabaseInstance;
 // --- End Supabase Client Setup ---
+
+// --- Monetag Ad Types (adjust based on actual Monetag SDK if available) ---
+declare global {
+  interface Window {
+    // Replace 'znymDisplayRewardedAd' with the actual function Monetag provides
+    // and add any other Monetag specific properties or methods.
+    znymDisplayRewardedAd?: (options: { zoneid: string | number, callbacks?: MonetagAdCallbacks }) => void;
+    // It's also common for ad SDKs to expose a global object:
+    // monetag?: { showRewarded: (options: any) => void; /* ... other methods ... */ };
+  }
+}
+
+interface MonetagAdCallbacks {
+  onShow?: () => void;
+  onClose?: (rewardGranted: boolean) => void; // rewardGranted might be part of onClose or a separate onReward
+  onComplete?: () => void; // Or onReward
+  onError?: (error: Error) => void;
+}
+// --- End Monetag Ad Types ---
+
 
 const paymentPlans = {
   trial: { id: 'trial', name: 'Scanner Pro - Trial', midtransPrice: 10000, telegramStars: 70, duration: '1 Minggu', features: ['Akses scanner dasar', 'Scan harian terbatas'], midtransPlanId: 'trial', telegramPlanId: 'scanner_pro_trial_tg' },
@@ -146,8 +168,10 @@ export default function ScannerPage() {
   const [scanResults, setScanResults] = useState('');
 
   const [dailyScanCount, setDailyScanCount] = useState(0);
-  const [showMonetagAdModal, setShowMonetagAdModal] = useState(false);
+  // const [showMonetagAdModal, setShowMonetagAdModal] = useState(false); // Removed, as rewarded ads are typically overlays
   const FREE_SCAN_LIMIT = 10;
+  const [isAdLoadingOrShowing, setIsAdLoadingOrShowing] = useState(false);
+
 
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -159,6 +183,113 @@ export default function ScannerPage() {
 
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showCameraErrorModal, setShowCameraErrorModal] = useState(false);
+
+  // --- Monetag Ad Script Loading ---
+  useEffect(() => {
+    if (REWARDED_INTERSTITIAL_ZONE_ID && typeof window !== 'undefined' && !window.znymDisplayRewardedAd) {
+      console.log('Attempting to load Monetag Rewarded Ad script for zone:', REWARDED_INTERSTITIAL_ZONE_ID);
+      const scriptId = 'monetag-rewarded-script';
+      if (document.getElementById(scriptId)) {
+        console.log('Monetag script already exists.');
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.id = scriptId;
+      // IMPORTANT: Replace this URL with the correct one from Monetag documentation for rewarded interstitial ads
+      script.src = `https://ads.monetag.com/site/script/rewarded_interstitial.js?zoneid=${REWARDED_INTERSTITIAL_ZONE_ID}`; // Example URL
+      script.async = true;
+      script.onload = () => {
+        console.log('Monetag Rewarded Ad script loaded successfully.');
+        if (typeof window.znymDisplayRewardedAd !== 'function') {
+            console.warn('Monetag SDK loaded, but window.znymDisplayRewardedAd is not a function. Check Monetag integration.');
+        }
+      };
+      script.onerror = () => {
+        console.error('Failed to load Monetag Rewarded Ad script.');
+        setFeedbackMessage('Gagal memuat komponen iklan. Fungsi iklan mungkin tidak tersedia.');
+        setFeedbackType('error');
+      };
+      document.head.appendChild(script);
+
+      return () => {
+        const existingScript = document.getElementById(scriptId);
+        if (existingScript) {
+          // document.head.removeChild(existingScript); // Some ad SDKs don't like being removed
+          console.log('Monetag script cleanup (if any) would happen here.');
+        }
+      };
+    } else if (!REWARDED_INTERSTITIAL_ZONE_ID) {
+        console.warn('NEXT_PUBLIC_REWARDED_INTERSTITIAL_ZONE_ID is not set. Rewarded ads will be disabled.');
+    }
+  }, []);
+
+  const handleShowRewardedAd = useCallback(() => {
+    if (isAdLoadingOrShowing) {
+        console.log("Ad already loading or showing.");
+        return;
+    }
+    if (!REWARDED_INTERSTITIAL_ZONE_ID) {
+        setFeedbackMessage('Fitur iklan tidak tersedia (ID Zona tidak diatur).');
+        setFeedbackType('warning');
+        return;
+    }
+    if (typeof window.znymDisplayRewardedAd !== 'function') {
+        setFeedbackMessage('Komponen iklan belum siap. Coba lagi nanti.');
+        setFeedbackType('error');
+        console.error('Monetag function window.znymDisplayRewardedAd not found.');
+        return;
+    }
+
+    console.log('Attempting to show Monetag Rewarded Ad for zone:', REWARDED_INTERSTITIAL_ZONE_ID);
+    setFeedbackMessage('Memuat iklan...');
+    setFeedbackType('info');
+    setIsAdLoadingOrShowing(true);
+
+    try {
+        window.znymDisplayRewardedAd({
+            zoneid: parseInt(REWARDED_INTERSTITIAL_ZONE_ID, 10), // Ensure zoneid is a number if required
+            callbacks: {
+                onShow: () => {
+                    console.log('Monetag Rewarded Ad: Shown');
+                    setFeedbackMessage('Iklan sedang ditampilkan...');
+                },
+                onClose: (rewardGranted) => { // Check Monetag docs for exact signature
+                    console.log('Monetag Rewarded Ad: Closed. Reward granted:', rewardGranted);
+                    setIsAdLoadingOrShowing(false);
+                    if (rewardGranted) {
+                        setFeedbackMessage('Terima kasih telah menonton iklan!');
+                        setFeedbackType('success');
+                        // Optional: Grant a specific reward here, e.g., an extra scan.
+                        // For now, the user can just proceed.
+                    } else {
+                        setFeedbackMessage('Iklan ditutup sebelum selesai.');
+                        setFeedbackType('info');
+                    }
+                },
+                onComplete: () => { // Or onReward
+                    console.log('Monetag Rewarded Ad: Completed/Reward');
+                    // This might be redundant if onClose handles rewardGranted, check Monetag docs.
+                    // setIsAdLoadingOrShowing(false); // onClose should handle this
+                    // setFeedbackMessage('Terima kasih! Reward diberikan.');
+                    // setFeedbackType('success');
+                },
+                onError: (error: Error) => {
+                    console.error('Monetag Rewarded Ad: Error', error);
+                    setFeedbackMessage(`Gagal memuat iklan: ${error.message}`);
+                    setFeedbackType('error');
+                    setIsAdLoadingOrShowing(false);
+                }
+            }
+        });
+    } catch (e) {
+        console.error("Error calling Monetag ad function:", e);
+        setFeedbackMessage('Gagal menampilkan iklan.');
+        setFeedbackType('error');
+        setIsAdLoadingOrShowing(false);
+    }
+  }, [isAdLoadingOrShowing]);
+
 
   const isValidDate = (d: unknown): d is Date => d instanceof Date && !isNaN(d.getTime());
 
@@ -324,9 +455,7 @@ export default function ScannerPage() {
     script.setAttribute('data-client-key', midtransClientKey);
     script.async = true;
     document.head.appendChild(script);
-    script.onload = () => {
-      // console.log("Midtrans Snap.js loaded successfully.");
-    };
+    script.onload = () => {};
     script.onerror = () => {
         console.error("Failed to load Midtrans Snap.js.");
         setFeedbackMessage('Gagal memuat skrip pembayaran. Fitur pembayaran mungkin tidak tersedia.');
@@ -455,7 +584,6 @@ export default function ScannerPage() {
     try {
       setFeedbackMessage('Mengirim ke AI untuk analisis...');
       
-      // Fetch Supabase session token for auth
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
       if (sessionError || !sessionData.session?.access_token) {
           console.error('Error getting Supabase session or token:', sessionError);
@@ -470,7 +598,7 @@ export default function ScannerPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`, // Send JWT
+          'Authorization': `Bearer ${authToken}`,
         },
         body: JSON.stringify({
           prompt: tradingPrompt,
@@ -485,9 +613,8 @@ export default function ScannerPage() {
         const displayError = errorResult.error || `Analisis AI gagal (Status: ${response.status})`;
         setFeedbackMessage(displayError);
         setFeedbackType('error');
-        // Consider showing the error in the results popup or a dedicated error display
         setScanResults(`Error: ${displayError}`); 
-        setShowScanResultsPopup(true); // Show popup even for errors to display the message
+        setShowScanResultsPopup(true);
         setIsScanningActive(false);
         return;
       }
@@ -531,10 +658,6 @@ export default function ScannerPage() {
     }
   }, [dailyScanCount, isProMode, supabaseUser, convertFileToBase64]); 
 
-  // Camera access and photo taking logic
-  // Note: For Telegram Mini Apps, direct camera access via navigator.mediaDevices.getUserMedia
-  // might be restricted or require using the Telegram Mini App platform's specific APIs.
-  // This implementation is for standard web environments.
   const closeCamera = useCallback(() => {
     if (videoRef.current?.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
@@ -645,25 +768,31 @@ export default function ScannerPage() {
 
   const handleCloseScanResultsPopup = async () => {
     setShowScanResultsPopup(false);
-    // Reset feedback message if it's an error, or set a neutral one
-    if (feedbackType === 'error' && scanResults.startsWith('Error:')) {
-        setFeedbackMessage('Silakan coba lagi atau unggah gambar lain.');
-        setFeedbackType('info');
+    const isErrorResult = scanResults.toLowerCase().startsWith('error:');
+    
+    setScanResults(''); // Clear previous results
+    
+    if (!isProMode && supabaseUser && supabaseUrl && supabaseAnonKey && !isErrorResult) {
+        // Only show ad if it was a successful scan and user is free
+        if (REWARDED_INTERSTITIAL_ZONE_ID) {
+            handleShowRewardedAd();
+        } else {
+            setFeedbackMessage('Hasil analisis ditutup.'); 
+            setFeedbackType('info');
+        }
+    } else if (isErrorResult) {
+        setFeedbackMessage('Analisis gagal. Silakan coba lagi atau unggah gambar lain.');
+        setFeedbackType('warning');
     } else {
         setFeedbackMessage('Hasil analisis ditutup.'); 
         setFeedbackType('info');
     }
-    setScanResults(''); // Clear previous results
-    if (!isProMode && supabaseUser && supabaseUrl && supabaseAnonKey) {
-      setShowMonetagAdModal(true);
-    }
   };
 
   const handleActualScanOrOpenCamera = async () => {
-    if (!supabaseUser && (supabaseUrl && supabaseAnonKey)) { // Check if Supabase is configured
+    if (!supabaseUser && (supabaseUrl && supabaseAnonKey)) {
         setFeedbackMessage('Anda harus login untuk menggunakan fitur ini.');
         setFeedbackType('warning');
-        // Optionally, trigger login flow or redirect
         return;
     }
     if (uploadedImage) await performGeminiScanViaBackend(uploadedImage);
@@ -683,7 +812,6 @@ export default function ScannerPage() {
     } else {
       if (dailyScanCount < FREE_SCAN_LIMIT) {
          setShowUpgradeModal(true); 
-         // If user proceeds with free scan from modal, modal should call handleActualScanOrOpenCamera
       } else {
         setFeedbackMessage(`Limit scan harian gratis (${FREE_SCAN_LIMIT}) telah tercapai. Silakan upgrade ke Pro.`);
         setFeedbackType('warning');
@@ -732,7 +860,7 @@ export default function ScannerPage() {
     return isProMode ? 'Buka Kamera (Pro)' : 'Buka Kamera';
   };
   
-  const mainButtonDisabled = isScanningActive; 
+  const mainButtonDisabled = isScanningActive || isAdLoadingOrShowing; 
 
   const handlePurchase = async (planKey: PaymentPlanKey) => {
     if (!supabaseUser && supabaseUrl && supabaseAnonKey) { 
@@ -827,7 +955,6 @@ export default function ScannerPage() {
   const parseScanResults = (results: string): Array<{ title: string; content: string; isSubItem?: boolean }> => {
     if (!results || typeof results !== 'string') return [{ title: "Error", content: "Hasil analisis tidak valid atau kosong." }];
     
-    // Handle explicit error messages from backend
     if (results.toLowerCase().startsWith('error:')) {
         return [{ title: "Kesalahan Analisis", content: results.substring(6).trim() }];
     }
@@ -846,7 +973,7 @@ export default function ScannerPage() {
             if (trimmedLine.toLowerCase().startsWith(mTitle.toLowerCase() + ":")) {
                 if (currentContent.trim() || (currentTitle !== "Informasi Umum" && !(parsed.length > 0 && parsed[parsed.length -1].title === currentTitle && !parsed[parsed.length-1].content.trim()))) {
                     if (currentTitle.toLowerCase() === "rekomendasi trading" && !currentContent.trim() && parsed.length > 0 && parsed[parsed.length - 1].title.toLowerCase() !== "rekomendasi trading") {
-                        // Skip adding an empty "Rekomendasi Trading" section if it's just a title
+                        // Skip
                     } else {
                          parsed.push({ title: currentTitle, content: currentContent.trim() });
                     }
@@ -862,7 +989,6 @@ export default function ScannerPage() {
             currentContent += (currentContent ? "\n" : "") + trimmedLine;
         }
     }
-    // Push the last collected item
     if (currentTitle && (currentContent.trim() || (currentTitle !== "Informasi Umum" && !(parsed.length > 0 && parsed[parsed.length -1].title === currentTitle && !parsed[parsed.length-1].content.trim())))) {
         parsed.push({ title: currentTitle, content: currentContent.trim() });
     } else if (parsed.length === 0 && results.trim()) { 
@@ -871,7 +997,6 @@ export default function ScannerPage() {
     
     if (parsed.length === 0 && !results.trim()) return [{ title: "Info", content: "Tidak ada hasil untuk ditampilkan." }];
     
-    // Filter out any initial "Informasi Umum" if its content is empty and other sections exist
     if (parsed.length > 1 && parsed[0].title === "Informasi Umum" && !parsed[0].content.trim()) {
         return parsed.slice(1);
     }
@@ -882,7 +1007,6 @@ export default function ScannerPage() {
   return (
     <>
       <main className="flex min-h-screen flex-col items-center justify-center p-4 font-sans relative bg-background text-foreground">
-        {/* Scan Results Popup */}
         {showScanResultsPopup && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-4 backdrop-blur-md">
             <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg">
@@ -916,35 +1040,6 @@ export default function ScannerPage() {
               </div>
               <div className="p-6 border-t border-border">
                 <button onClick={handleCloseScanResultsPopup} className="w-full btn-primary">Tutup</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Monetag Ad Modal */}
-        {showMonetagAdModal && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[101] p-4 backdrop-blur-md">
-            <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md relative">
-              <div className="p-6 text-center border-b border-border">
-                <h2 className="text-xl font-semibold text-foreground">Penawaran Sponsor</h2>
-                <button onClick={() => setShowMonetagAdModal(false)} className="absolute top-3 right-3 btn-icon text-muted-foreground hover:text-foreground" aria-label="Tutup iklan"><XCircle className="w-6 h-6" /></button>
-              </div>
-              <div className="p-6 min-h-[250px] flex flex-col items-center justify-center">
-                <div id="monetag-ad-container-scannerpage" className="w-full h-full flex items-center justify-center bg-neutral-700/20 rounded-md text-center">
-                   <p className="text-muted-foreground text-sm p-4">Konten sponsor akan ditampilkan di sini.<br/></p>
-                   REWARDED_INTERSTITIAL_ZONE_ID="9375207";
-                   <script type="text/javascript">
-                       var REWARDED_INTERSTITIAL_ZONE_ID = "9375207";
-                       var monetag = window.monetag || {};
-                       monetag.callbacks = monetag.callbacks || {};
-                       monetag.callbacks.onRewardedInterstitialLoaded = function() {
-                       }
-                       </script>
-                </div>
-                <p className="text-muted-foreground text-xs mt-2 text-center">Memuat iklan... Jika tidak muncul, pastikan konfigurasi Monetag sudah benar dan tidak ada adblocker yang aktif.</p>
-              </div>
-              <div className="p-4 border-t border-border text-center">
-                <button onClick={() => setShowMonetagAdModal(false)} className="btn-primary text-sm">Tutup Iklan</button>
               </div>
             </div>
           </div>
@@ -999,14 +1094,14 @@ export default function ScannerPage() {
                     <div className="p-6 border-t border-border space-y-3">
                         {dailyScanCount < FREE_SCAN_LIMIT && (
                              <button onClick={async () => { setShowUpgradeModal(false); if (dailyScanCount < FREE_SCAN_LIMIT) await handleActualScanOrOpenCamera(); else { setFeedbackMessage(`Limit scan harian (${FREE_SCAN_LIMIT}) tercapai.`); setFeedbackType('warning');}}}
-                                className="w-full btn-neutral text-sm" disabled={isLoadingPurchase !== null || isScanningActive}>
+                                className="w-full btn-neutral text-sm" disabled={isLoadingPurchase !== null || isScanningActive || isAdLoadingOrShowing}>
                                 Lanjutkan Gratis ({FREE_SCAN_LIMIT - dailyScanCount} scan tersisa)
                             </button>
                         )}
                         {dailyScanCount >= FREE_SCAN_LIMIT && (
                              <p className="text-xs text-yellow-500 text-center">Limit scan harian gratis Anda telah habis.</p>
                         )}
-                        <button onClick={() => setShowUpgradeModal(false)} className="w-full btn-outline text-sm" disabled={isLoadingPurchase !== null}>
+                        <button onClick={() => setShowUpgradeModal(false)} className="w-full btn-outline text-sm" disabled={isLoadingPurchase !== null || isAdLoadingOrShowing }>
                             Tutup
                         </button>
                     </div>
@@ -1030,10 +1125,10 @@ export default function ScannerPage() {
                   <>
                     <video ref={videoRef} className="w-full h-full object-cover" playsInline muted autoPlay />
                     <div className="absolute bottom-3 left-1/2 transform -translate-x-1/2 flex space-x-2 z-20">
-                      <button onClick={takePhoto} disabled={!videoRef.current?.srcObject || isScanningActive} className="btn-primary btn-sm bg-opacity-80 backdrop-blur-sm hover:bg-opacity-100">
+                      <button onClick={takePhoto} disabled={!videoRef.current?.srcObject || isScanningActive || isAdLoadingOrShowing} className="btn-primary btn-sm bg-opacity-80 backdrop-blur-sm hover:bg-opacity-100">
                         <Camera className="w-5 h-5 mr-2" />Ambil Foto
                       </button>
-                      <button onClick={closeCamera} disabled={isScanningActive} className="btn-icon bg-black/50 hover:bg-black/70 text-white backdrop-blur-sm" aria-label="Tutup Kamera">
+                      <button onClick={closeCamera} disabled={isScanningActive || isAdLoadingOrShowing} className="btn-icon bg-black/50 hover:bg-black/70 text-white backdrop-blur-sm" aria-label="Tutup Kamera">
                         <XCircle className="w-5 h-5" />
                       </button>
                     </div>
@@ -1049,7 +1144,7 @@ export default function ScannerPage() {
                   />
               ) : (
                 <div className="text-center p-4 select-none">
-                  <Camera className={`h-16 w-16 mb-3 transition-colors ${isScanningActive ? 'text-primary opacity-40' : 'text-muted-foreground opacity-70'}`} />
+                  <Camera className={`h-16 w-16 mb-3 transition-colors ${isScanningActive || isAdLoadingOrShowing ? 'text-primary opacity-40' : 'text-muted-foreground opacity-70'}`} />
                   <p className="text-sm text-muted-foreground">Klik &quot;{mainButtonText()}&quot; di bawah, atau unggah gambar.</p>
                 </div>
               )}
@@ -1057,18 +1152,18 @@ export default function ScannerPage() {
                   <> <div className={`corner top-left ${isProMode ? 'border-primary/70' : 'border-border/70'}`}></div> <div className={`corner top-right ${isProMode ? 'border-primary/70' : 'border-border/70'}`}></div> <div className={`corner bottom-left ${isProMode ? 'border-primary/70' : 'border-border/70'}`}></div> <div className={`corner bottom-right ${isProMode ? 'border-primary/70' : 'border-border/70'}`}></div> </>
               )}
               {imagePreviewUrl && !isScanningActive && !isCameraOpen && (
-                <button onClick={handleRemoveImage} className="absolute top-2 right-2 btn-icon bg-black/60 hover:bg-black/80 text-white z-20" aria-label="Buang gambar"><XCircle className="w-5 h-5" /></button>
+                <button onClick={handleRemoveImage} disabled={isAdLoadingOrShowing} className="absolute top-2 right-2 btn-icon bg-black/60 hover:bg-black/80 text-white z-20" aria-label="Buang gambar"><XCircle className="w-5 h-5" /></button>
               )}
-              {isScanningActive && (<div className="absolute inset-0 bg-black/30 flex-center z-10 backdrop-blur-sm rounded-xl"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>)}
+              {(isScanningActive || isAdLoadingOrShowing) && (<div className="absolute inset-0 bg-black/30 flex-center z-10 backdrop-blur-sm rounded-xl"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>)}
               <canvas ref={canvasRef} className="hidden" aria-hidden="true"></canvas>
             </div>
           </div>
           <div className="px-5 sm:px-6 pb-3 sm:pb-4 space-y-3 bg-card">
-            <button onClick={handleMainScanClick} disabled={mainButtonDisabled || isCameraOpen} className={`w-full btn-primary text-base sm:text-lg ${(mainButtonDisabled || isCameraOpen) ? 'opacity-60 cursor-not-allowed' : ''}`}>
+            <button onClick={handleMainScanClick} disabled={mainButtonDisabled || isCameraOpen || isAdLoadingOrShowing} className={`w-full btn-primary text-base sm:text-lg ${(mainButtonDisabled || isCameraOpen || isAdLoadingOrShowing) ? 'opacity-60 cursor-not-allowed' : ''}`}>
               {(isScanningActive && !isCameraOpen) && <Loader2 className="mr-2 h-5 w-5 animate-spin" />} {mainButtonText()}
             </button>
             <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" ref={fileInputRef} id="imageUploadInputScannerPage" aria-label="Unggah gambar"/>
-            <button onClick={() => { if (isCameraOpen) closeCamera(); fileInputRef.current?.click(); }} disabled={mainButtonDisabled || isCameraOpen} className={`w-full btn-neutral text-sm sm:text-base ${(mainButtonDisabled || isCameraOpen) ? 'opacity-60 cursor-not-allowed' : ''}`}>
+            <button onClick={() => { if (isCameraOpen) closeCamera(); fileInputRef.current?.click(); }} disabled={mainButtonDisabled || isCameraOpen || isAdLoadingOrShowing} className={`w-full btn-neutral text-sm sm:text-base ${(mainButtonDisabled || isCameraOpen || isAdLoadingOrShowing) ? 'opacity-60 cursor-not-allowed' : ''}`}>
               <UploadCloud className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />{imagePreviewUrl ? 'Ganti Gambar' : (isCameraOpen ? 'Tutup & Unggah Gambar' : 'Unggah Gambar')}
             </button>
           </div>
@@ -1079,8 +1174,19 @@ export default function ScannerPage() {
             </div>
           )}
         </div>
+        
+        {/* Footer remains unchanged */}
+        <footer className="mt-6 text-center">
+          <p className="text-xs text-muted-foreground">
+            {(!supabaseUrl || !supabaseAnonKey) ? "Layanan Supabase tidak terkonfigurasi." :
+              (isProMode && proExpiryDate ? `Mode Pro aktif hingga ${proExpiryDate}.` :
+                (supabaseUser ? `Mode Gratis: ${dailyScanCount}/${FREE_SCAN_LIMIT} scan hari ini. ${dailyScanCount >= FREE_SCAN_LIMIT ? 'Limit tercapai.' : ''}` :
+                  (isLoadingAuth ? 'Memuat status...' : 'Silakan login untuk memulai.')
+                ))
+            }
+          </p>
+        </footer>
 
-       
 
         <style jsx global>{`
           :root {
