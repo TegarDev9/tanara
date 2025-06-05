@@ -8,6 +8,7 @@ import Image from 'next/image';
 // --- Supabase Client Setup ---
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const REWARDED_INTERSTITIAL_ZONE_ID = process.env.NEXT_PUBLIC_REWARDED_INTERSTITIAL_ZONE_ID;
 
 let supabaseInstance: SupabaseClient;
 
@@ -930,7 +931,15 @@ export default function ScannerPage() {
               </div>
               <div className="p-6 min-h-[250px] flex flex-col items-center justify-center">
                 <div id="monetag-ad-container-scannerpage" className="w-full h-full flex items-center justify-center bg-neutral-700/20 rounded-md text-center">
-                   <p className="text-muted-foreground text-sm p-4">Konten sponsor akan ditampilkan di sini.<br/>(Tempatkan kode iklan Monetag Anda)</p>
+                   <p className="text-muted-foreground text-sm p-4">Konten sponsor akan ditampilkan di sini.<br/></p>
+                   REWARDED_INTERSTITIAL_ZONE_ID="9375207";
+                   <script type="text/javascript">
+                       var REWARDED_INTERSTITIAL_ZONE_ID = "9375207";
+                       var monetag = window.monetag || {};
+                       monetag.callbacks = monetag.callbacks || {};
+                       monetag.callbacks.onRewardedInterstitialLoaded = function() {
+                       }
+                       </script>
                 </div>
                 <p className="text-muted-foreground text-xs mt-2 text-center">Memuat iklan... Jika tidak muncul, pastikan konfigurasi Monetag sudah benar dan tidak ada adblocker yang aktif.</p>
               </div>
