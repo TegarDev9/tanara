@@ -1,53 +1,64 @@
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, Part, HarmProbability, FinishReason } from '@google/generative-ai'; // Added HarmProbability and FinishReason
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, Part, HarmProbability, FinishReason } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
-import * as jose from 'jose'; // Import jose
+import * as jose from 'jose';
 
-const MODEL_NAME = "gemini-2.0-flash"; // Corrected model name as per previous context, ensure this is what you intend. Gemini 2.0 flash might be "gemini-2.0-flash-latest"
+const MODEL_NAME = "gemini-2.5-flash"; // Updated model name
 
 // Helper function to verify JWT
 async function verifyToken(token: string): Promise<jose.JWTPayload | null> {
-  const publicKeyPem = process.env.TELEGRAM_AUTH_JWT_PUBLIC_KEY;
-  if (!publicKeyPem) {
-    console.error('Public key for JWT verification not found in environment variables.');
+  const publicKeyPemBase64 = process.env.SUPABASE_JWT_SECRET; 
+  const supabaseAuthIssuer = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1`;
+
+
+  if (!publicKeyPemBase64) {
+    console.error('JWT signing secret/public key (SUPABASE_JWT_SECRET or equivalent) not found in environment variables.');
     return null;
   }
 
   try {
-    const publicKey = await jose.importSPKI(publicKeyPem, 'RS256');
-    // Update expected issuer and audience to match what your Supabase function sets
-    const { payload } = await jose.jwtVerify(token, publicKey, {
-      issuer: 'urn:supabase:telegram-auth', 
-      audience: 'urn:web3auth:client', 
+    // If using HS256 (symmetric, with a secret - this is more common for Supabase JWTs by default)
+    // Ensure SUPABASE_JWT_SECRET is the actual JWT secret from your Supabase project settings.
+    const secret = new TextEncoder().encode(publicKeyPemBase64);
+    const { payload } = await jose.jwtVerify(token, secret, {
+      issuer: supabaseAuthIssuer,
+      audience: 'authenticated', // Standard Supabase audience for user tokens
     });
     return payload;
-  } catch (error) {
-    console.error('JWT verification failed:', error);
+
+  } catch (error: unknown) {
+    console.error('JWT verification failed:', error instanceof Error ? error.message : String(error));
+    if (error instanceof jose.errors.JWTExpired) {
+        console.error('JWT has expired.');
+    } else if (error instanceof jose.errors.JWSSignatureVerificationFailed) {
+        console.error('JWT signature verification failed. Check your SUPABASE_JWT_SECRET or public key.');
+    } else if (error instanceof jose.errors.JWTClaimValidationFailed) {
+        console.error(`JWT claim validation failed: ${error.message}. Check issuer and audience.`);
+    }
     return null;
   }
 }
 
 export async function POST(req: Request) {
-  console.log("Backend API route /api/llm/gemini/analyze-image hit");
+  console.log("API Route: /api/llm/gemini/analyze-image invoked.");
 
-  // --- JWT Authentication Check ---
   const authHeader = req.headers.get('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return NextResponse.json({ error: 'Akses ditolak. Token otorisasi tidak ada.' }, { status: 401 });
+    console.warn('Authorization header missing or not Bearer type.');
+    return NextResponse.json({ error: 'Akses ditolak. Token otorisasi tidak ada atau format salah.' }, { status: 401 });
   }
-  const token = authHeader.substring(7); // Remove "Bearer " prefix
-  const decodedToken = await verifyToken(token);
+  const token = authHeader.substring(7); 
 
+  const decodedToken = await verifyToken(token);
   if (!decodedToken) {
+    console.warn('JWT verification failed or token is invalid.');
     return NextResponse.json({ error: 'Akses ditolak. Token otorisasi tidak valid atau kedaluwarsa.' }, { status: 401 });
   }
-  // Optional: You can use decodedToken.sub (which should be the Telegram user ID) for logging or further checks
-  console.log(`Authorized access for user: ${decodedToken.sub}`);
-  // --- End JWT Authentication Check ---
+  console.log(`Authorized access for user ID (sub): ${decodedToken.sub}`);
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.error('API key not found in environment variables.');
-    return NextResponse.json({ error: 'Kunci API tidak dikonfigurasi di server.' }, { status: 500 });
+    console.error('GEMINI_API_KEY not found in environment variables.');
+    return NextResponse.json({ error: 'Kunci API Gemini tidak dikonfigurasi di server.' }, { status: 500 });
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -67,7 +78,7 @@ export async function POST(req: Request) {
   ];
 
   const model = genAI.getGenerativeModel({
-    model: MODEL_NAME,
+    model: MODEL_NAME, // Uses "gemini-2.5-flash"
     generationConfig,
     safetySettings,
   });
@@ -87,7 +98,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Prompt diperlukan' }, { status: 400 });
     }
     if (!imageData || !mimeType) {
-      return NextResponse.json({ error: 'Data gambar dan tipe mime diperlukan' }, { status: 400 });
+      return NextResponse.json({ error: 'Data gambar (imageData) dan tipe mime (mimeType) diperlukan' }, { status: 400 });
     }
 
     const imagePart: Part = {
@@ -107,17 +118,11 @@ export async function POST(req: Request) {
     
     const responseCandidate = result.response?.candidates?.[0];
 
-    if (responseCandidate && 
-        responseCandidate.content &&
-        responseCandidate.content.parts &&
-        responseCandidate.content.parts.length > 0 &&
-        typeof responseCandidate.content.parts[0].text === 'string') {
-      
+    if (responseCandidate?.content?.parts?.[0]?.text) {
       const text = responseCandidate.content.parts[0].text;
       console.log("Berhasil menerima respons dari Gemini API.");
       return NextResponse.json({ text });
     } else {
-      // Penanganan jika tidak ada teks yang valid atau konten diblokir
       console.error('Struktur respons tidak terduga atau konten diblokir dari Gemini API:', JSON.stringify(result.response, null, 2));
       
       const promptFeedback = result.response?.promptFeedback;
@@ -127,16 +132,11 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: `Analisis AI diblokir: ${blockMessage} (Alasan: ${promptFeedback.blockReason})` }, { status: 400 });
       }
       
-      // Periksa finishReason dari kandidat
-      // Gunakan enum FinishReason dari library
       if (responseCandidate?.finishReason === FinishReason.SAFETY) {
         let safetyMessage = "Analisis AI diblokir karena pengaturan keamanan (finishReason: SAFETY).";
         if (responseCandidate.safetyRatings && responseCandidate.safetyRatings.length > 0) {
-          // Buat pesan yang lebih detail dari safetyRatings
           const problematicRatings = responseCandidate.safetyRatings
             .filter(rating => 
-              // Anda mungkin ingin menyesuaikan logika ini berdasarkan threshold yang Anda set
-              // Biasanya, jika finishReason adalah SAFETY, setidaknya satu kategori telah melanggar threshold
               rating.probability === HarmProbability.HIGH || 
               rating.probability === HarmProbability.MEDIUM 
             )
@@ -151,12 +151,11 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: safetyMessage }, { status: 400 });
       }
       
-      // Fallback error jika tidak ada alasan blokir yang jelas tetapi konten tidak ada
       return NextResponse.json({ error: 'Gagal mendapatkan teks dari respons AI atau format respons tidak valid.' }, { status: 500 });
     }
 
   } catch (error: unknown) {
-    console.error('Error di /api/analyze-image:', error);
+    console.error('Error di /api/llm/gemini/analyze-image:', error);
     let errorMessage = 'Gagal memproses permintaan di backend.';
     const statusCode = 500;
 
@@ -171,4 +170,4 @@ export async function POST(req: Request) {
     
     return NextResponse.json({ error: errorMessage }, { status: statusCode });
   }
-} 
+}

@@ -1,12 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef, ChangeEvent } from 'react';
-// Removed ShieldOff, ExternalLink as they were unused
 import { Camera, AlertCircle, CheckCircle2, Star, UploadCloud, XCircle, Loader2, Sparkles, Crown, ShieldAlert, VideoOff } from 'lucide-react';
-// Import Supabase from CDN
-import { createClient, SupabaseClient, User, Subscription as SupabaseSubscription, AuthError, Session } from '@supabase/supabase-js'; // Added Session
-import Image from 'next/image'; // Import next/image
-
+import { createClient, SupabaseClient, User, Subscription as SupabaseSubscription, AuthError, Session } from '@supabase/supabase-js';
+import Image from 'next/image';
 
 // --- Supabase Client Setup ---
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -14,7 +11,6 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 let supabaseInstance: SupabaseClient;
 
-// Minimal mock session type for the signInAnonymously mock
 interface MockSession extends Partial<Session> {
   access_token: string;
   token_type: string;
@@ -23,23 +19,16 @@ interface MockSession extends Partial<Session> {
   refresh_token?: string;
 }
 
-
 if (supabaseUrl && supabaseAnonKey) {
   supabaseInstance = createClient(supabaseUrl, supabaseAnonKey);
-  // console.log("Supabase client initialized with URL:", supabaseUrl);
 } else {
-  console.error('Supabase URL or Anon Key is missing in environment variables. ScannerPage will use a fallback mock that will not connect to a real Supabase instance.');
-  // Fallback to a dummy client to prevent runtime errors if Supabase isn't configured
+  console.error('Supabase URL or Anon Key is missing. ScannerPage will use a fallback mock.');
   supabaseInstance = {
     auth: {
-      getSession: async () => {
-        // console.warn("Supabase not configured: using mock getSession");
-        return ({ data: { session: null }, error: new Error('Supabase not configured') as AuthError }); // Ensure error type matches
-      },
+      getSession: async () => ({ data: { session: null }, error: new Error('Supabase mock: getSession error') as AuthError }),
       onAuthStateChange: (_callback: (event: string, session: User | null) => void) => {
-        // Using the _callback parameter to satisfy ESLint
         if (process.env.NODE_ENV === 'development') {
-            console.log("Supabase mock: onAuthStateChange invoked, callback type:", typeof _callback);
+          console.log("Supabase mock: onAuthStateChange invoked, callback type:", typeof _callback);
         }
         return ({
           data: { subscription: { unsubscribe: () => {} } as SupabaseSubscription },
@@ -47,78 +36,39 @@ if (supabaseUrl && supabaseAnonKey) {
         } as { data: { subscription: SupabaseSubscription }; error: AuthError | null });
       },
       signInAnonymously: async () => {
-        console.warn("Supabase not configured: using mock signInAnonymously");
+        console.warn("Supabase mock: signInAnonymously");
         const mockUser = {
-            id: 'mock-anon-user-id',
-            aud: 'authenticated',
-            role: 'anonymous',
-            email: undefined,
-            app_metadata: {},
-            user_metadata: {},
-            created_at: new Date().toISOString(),
-            is_anonymous: true,
+            id: 'mock-anon-user-id', aud: 'authenticated', role: 'anonymous', email: undefined,
+            app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString(), is_anonymous: true,
         } as User;
-        const mockSession: MockSession = { // Using the defined MockSession type
-            access_token: 'mock-token',
-            token_type: 'bearer',
-            user: mockUser,
-            expires_at: Date.now() + 3600000,
-            refresh_token: 'mock-refresh-token'
+        const mockSession: MockSession = {
+            access_token: 'mock-anon-token', token_type: 'bearer', user: mockUser,
+            expires_at: Date.now() + 3600000, refresh_token: 'mock-refresh-token'
         };
         return { data: { user: mockUser, session: mockSession }, error: null };
       }
     },
-    from: (tableName: string) => {
-      if (process.env.NODE_ENV !== 'production') console.log(`Mock Supabase: from(${tableName}) called`);
-      return {
-        select: (_selectStatement?: string) => {
-          if (process.env.NODE_ENV !== 'production') console.log(`Mock Supabase: select(${_selectStatement || 'all'}) on ${tableName}`);
-          return {
-            eq: (_column: string, _value: unknown) => {
-              if (process.env.NODE_ENV !== 'production') console.log(`Mock Supabase: eq(${_column}, ${_value}) on ${tableName}`);
-              return {
-                single: async () => {
-                  return ({ data: null, error: new Error('Supabase not configured: mock single') });
-                },
-              };
-            },
-          };
-        },
-        update: (_values: object) => {
-          if (process.env.NODE_ENV !== 'production') console.log(`Mock Supabase: update() on ${tableName} with values:`, _values);
-          return {
-            eq: (_column: string, _value: unknown) => {
-              if (process.env.NODE_ENV !== 'production') console.log(`Mock Supabase: update().eq(${_column}, ${_value}) on ${tableName}`);
-              return Promise.resolve({ data: null, error: new Error('Supabase not configured: mock update eq') });
-            },
-          };
-        },
-      };
-    },
-    rpc: async (...args: unknown[]) => {
-        console.log("Mock Supabase: rpc called with", args);
-        return { data: null, error: new Error('Supabase not configured: rpc mock') };
-    },
+    from: (tableName: string) => ({
+      select: (_selectStatement?: string) => ({
+        eq: (_column: string, _value: unknown) => ({
+          single: async () => ({ data: null, error: new Error(`Supabase mock: from(${tableName}).select().eq().single() error`) }),
+        }),
+      }),
+      update: (_values: object) => ({
+        eq: (_column: string, _value: unknown) => Promise.resolve({ data: null, error: new Error(`Supabase mock: from(${tableName}).update().eq() error`) }),
+      }),
+    }),
+    rpc: async (...args: unknown[]) => ({ data: null, error: new Error('Supabase mock: rpc error') }),
     storage: {
-        from: (bucketName: string) => {
-            console.log(`Mock Supabase Storage: from(${bucketName})`);
-            return {
-                upload: async (path: string, file: File) => {
-                    console.log(`Mock Supabase Storage: upload(${path}, ${file.name})`);
-                    return { data: { path }, error: null };
-                },
-                download: async (path: string) => {
-                    console.log(`Mock Supabase Storage: download(${path})`);
-                    return { data: null, error: new Error('Mock download error') };
-                },
-            };
-        }
+        from: (_bucketName: string) => ({
+            upload: async (_path: string, _file: File) => ({ data: { path: _path }, error: null }),
+            download: async (_path: string) => ({ data: null, error: new Error('Supabase mock: storage.download error') }),
+        })
     }
   } as unknown as SupabaseClient;
 }
 const supabase = supabaseInstance;
 // --- End Supabase Client Setup ---
-
 
 const paymentPlans = {
   trial: { id: 'trial', name: 'Scanner Pro - Trial', midtransPrice: 10000, telegramStars: 70, duration: '1 Minggu', features: ['Akses scanner dasar', 'Scan harian terbatas'], midtransPlanId: 'trial', telegramPlanId: 'scanner_pro_trial_tg' },
@@ -315,7 +265,7 @@ export default function ScannerPage() {
         await fetchUserProfile(session.user.id);
       } else {
         setIsLoadingAuth(false);
-        if(!feedbackMessage.startsWith('Gagal')) {
+        if(!feedbackMessage.startsWith('Gagal') && !feedbackMessage.startsWith('Silakan login')) {
           setFeedbackMessage('Silakan login untuk menggunakan fitur Scanner Pro.');
           setFeedbackType('warning');
         }
@@ -397,14 +347,14 @@ export default function ScannerPage() {
      if( !supabaseUrl || !supabaseAnonKey) return;
 
      if (isLoadingAuth) {
-         setFeedbackMessage('Memeriksa status autentikasi dan langganan...');
+         setFeedbackMessage('Memeriksa status autentikasi');
          setFeedbackType('info');
      } else if (supabaseUser) {
          if (isProMode) {
              setFeedbackMessage(`Akses Pro aktif hingga ${proExpiryDate}. Fitur siap digunakan.`);
              setFeedbackType('success');
          } else if (feedbackMessage.includes('memuat fitur') || feedbackMessage.includes('Memeriksa status') || feedbackMessage.startsWith('Sedang memuat')) {
-             setFeedbackMessage('Anda menggunakan mode gratis. Upgrade ke Pro untuk fitur penuh.');
+             setFeedbackMessage('Anda menggunakan mode gratis');
              setFeedbackType('info');
          }
      } else if (!supabaseUser && !isLoadingAuth){
@@ -458,7 +408,7 @@ export default function ScannerPage() {
              reject(new Error('Gagal konversi file ke base64 (hasil pembacaan kosong).'));
         }
       };
-      reader.onerror = (error) => reject(new Error('Gagal baca file: ' + (error instanceof ProgressEvent ? 'ProgressEvent' : String(error)) ) );
+      reader.onerror = (error) => reject(new Error('Gagal baca file: ' + (error instanceof ProgressEvent ? 'ProgressEvent Error' : String(error)) ) );
     });
   }, []);
 
@@ -470,27 +420,23 @@ export default function ScannerPage() {
       return;
     }
     setIsScanningActive(true);
-    setFeedbackMessage('Menganalisis gambar dengan AI...');
+    setFeedbackMessage('Mengkonversi gambar dan mengirim ke AI...');
     setFeedbackType('info');
 
-    let base64ImageData: string | null = null;
+    let base64ImageData: string;
+    let mimeType: string = imageFile.type;
+
     try {
-        base64ImageData = await convertFileToBase64(imageFile); // Using the convertFileToBase64 function
+        base64ImageData = await convertFileToBase64(imageFile);
     } catch (conversionError: unknown) {
         console.error('Error converting file to base64:', conversionError);
-        setFeedbackMessage(`Gagal memproses gambar: ${conversionError instanceof Error ? conversionError.message : String(conversionError)}`);
+        const message = conversionError instanceof Error ? conversionError.message : String(conversionError);
+        setFeedbackMessage(`Gagal memproses gambar: ${message}`);
         setFeedbackType('error');
         setIsScanningActive(false);
         return;
     }
     
-    if (!base64ImageData) {
-        setFeedbackMessage('Gagal mengkonversi gambar ke format yang dibutuhkan.');
-        setFeedbackType('error');
-        setIsScanningActive(false);
-        return;
-    }
-
     const tradingPrompt = `You are a very useful assistant. Help me with determining the analisis day trading content of my market finance. The photo shows market analisis product for a trading. Determine which products are shown in the photo and return them ONLY as a text list, where each list element should contain:
 - Market Structure: (e.g., Uptrend, Downtrend, Sideways, Breakout, Support/Resistance levels)
 - Candlestick Pattern: (e.g., Doji, Hammer, Engulfing, Morning Star, etc., and its implication)
@@ -506,41 +452,51 @@ export default function ScannerPage() {
 - Sentimen Media sosial
 `;
     try {
-      console.log("Attempting to call /api/llm/gemini/analyze-image (currently mocked) with base64 image data and prompt:", tradingPrompt);
-      const formData = new FormData();
-      formData.append('imageData', base64ImageData);
-      formData.append('prompt', tradingPrompt);
-      const response = await fetch('/api/llm/gemini/analyze-image', { method: 'POST', body: formData });
-      const result = await response.json();
+      setFeedbackMessage('Mengirim ke AI untuk analisis...');
       
-      if (result.error) {
-        console.error("Error from backend:", result.error);
-        setFeedbackMessage(`Gagal memproses gambar: ${result.error}`);
+      // Fetch Supabase session token for auth
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session?.access_token) {
+          console.error('Error getting Supabase session or token:', sessionError);
+          setFeedbackMessage('Gagal mendapatkan token otorisasi. Silakan login ulang.');
+          setFeedbackType('error');
+          setIsScanningActive(false);
+          return;
+      }
+      const authToken = sessionData.session.access_token;
+
+      const response = await fetch('/api/llm/gemini/analyze-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`, // Send JWT
+        },
+        body: JSON.stringify({
+          prompt: tradingPrompt,
+          imageData: base64ImageData,
+          mimeType: mimeType,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorResult = await response.json().catch(() => ({ error: `Permintaan gagal dengan status ${response.status}` }));
+        console.error(`Error from backend API (${response.status}):`, errorResult);
+        const displayError = errorResult.error || `Analisis AI gagal (Status: ${response.status})`;
+        setFeedbackMessage(displayError);
         setFeedbackType('error');
+        // Consider showing the error in the results popup or a dedicated error display
+        setScanResults(`Error: ${displayError}`); 
+        setShowScanResultsPopup(true); // Show popup even for errors to display the message
         setIsScanningActive(false);
         return;
       }
-      console.log("Result from backend:", result);
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Mock API call
-      const mockApiResult = {
-        text: `Market Structure: Uptrend, Breakout from resistance at 150.00
-Candlestick Pattern: Bullish Engulfing near support, indicating potential continuation.
-Trend Market: Strong Bullish
-Signal Type: Buy
-Bandarmology: Accumulation observed in the last 5 candles.
-Rekomendasi Trading:
-  - Time Frame: 4 hours, 1 Day
-  - Gaya Trading: Swing Trading
-  - Resiko: Medium
-  - Rekomendasi Aksi: Buy on pullback to 152.00, Stop Loss at 148.50, Target Price 160.00
-Sentimen Pasar: Positif
-Sentimen Media sosial: Netral cenderung positif`
-      };
 
-      if (mockApiResult.text) {
-        setScanResults(mockApiResult.text);
+      const result = await response.json();
+      
+      if (result.text) {
+        setScanResults(result.text);
         setShowScanResultsPopup(true);
-        setFeedbackMessage('Analisis AI berhasil! (Menggunakan data mock)');
+        setFeedbackMessage('Analisis AI berhasil!');
         setFeedbackType('success');
         if (!isProMode && supabaseUser && supabaseUrl && supabaseAnonKey) {
           const newCount = dailyScanCount + 1;
@@ -554,19 +510,30 @@ Sentimen Media sosial: Netral cenderung positif`
             });
         }
       } else {
-        throw new Error('Respon backend tidak valid (Mock).');
+        console.error('Backend response missing text field:', result);
+        const errorMessage = result.error || 'Format respons dari AI tidak valid.';
+        setFeedbackMessage(errorMessage);
+        setFeedbackType('error');
+        setScanResults(`Error: ${errorMessage}`);
+        setShowScanResultsPopup(true);
       }
 
     } catch (error: unknown) {
-      console.error('Error during Gemini scan:', error);
-      setFeedbackMessage(`Analisis AI gagal: ${error instanceof Error ? error.message : String(error)}`);
+      console.error('Error during Gemini scan fetch:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      setFeedbackMessage(`Analisis AI gagal: ${message}`);
       setFeedbackType('error');
+      setScanResults(`Error: ${message}`);
+      setShowScanResultsPopup(true);
     } finally {
       setIsScanningActive(false);
     }
-  }, [dailyScanCount, isProMode, supabaseUser, convertFileToBase64]); // Added convertFileToBase64 to dependencies
+  }, [dailyScanCount, isProMode, supabaseUser, convertFileToBase64]); 
 
-
+  // Camera access and photo taking logic
+  // Note: For Telegram Mini Apps, direct camera access via navigator.mediaDevices.getUserMedia
+  // might be restricted or require using the Telegram Mini App platform's specific APIs.
+  // This implementation is for standard web environments.
   const closeCamera = useCallback(() => {
     if (videoRef.current?.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
@@ -677,22 +644,36 @@ Sentimen Media sosial: Netral cenderung positif`
 
   const handleCloseScanResultsPopup = async () => {
     setShowScanResultsPopup(false);
-    setFeedbackMessage('Hasil analisis ditutup.'); setFeedbackType('info');
+    // Reset feedback message if it's an error, or set a neutral one
+    if (feedbackType === 'error' && scanResults.startsWith('Error:')) {
+        setFeedbackMessage('Silakan coba lagi atau unggah gambar lain.');
+        setFeedbackType('info');
+    } else {
+        setFeedbackMessage('Hasil analisis ditutup.'); 
+        setFeedbackType('info');
+    }
+    setScanResults(''); // Clear previous results
     if (!isProMode && supabaseUser && supabaseUrl && supabaseAnonKey) {
       setShowMonetagAdModal(true);
     }
   };
 
   const handleActualScanOrOpenCamera = async () => {
+    if (!supabaseUser && (supabaseUrl && supabaseAnonKey)) { // Check if Supabase is configured
+        setFeedbackMessage('Anda harus login untuk menggunakan fitur ini.');
+        setFeedbackType('warning');
+        // Optionally, trigger login flow or redirect
+        return;
+    }
     if (uploadedImage) await performGeminiScanViaBackend(uploadedImage);
     else await openCamera();
   };
 
   const handleMainScanClick = async () => {
     if (isScanningActive || isCameraOpen) return;
-    if (!supabaseUser && supabaseUrl && supabaseAnonKey) {
+    if (!supabaseUser && supabaseUrl && supabaseAnonKey) { 
       setFeedbackMessage('Silakan login untuk menggunakan fitur ini.'); setFeedbackType('warning'); return;
-    } else if (!supabaseUrl || !supabaseAnonKey) {
+    } else if (!supabaseUrl || !supabaseAnonKey) { 
       setFeedbackMessage('Layanan tidak tersedia (konfigurasi backend hilang).'); setFeedbackType('error'); return;
     }
 
@@ -700,37 +681,38 @@ Sentimen Media sosial: Netral cenderung positif`
       await handleActualScanOrOpenCamera();
     } else {
       if (dailyScanCount < FREE_SCAN_LIMIT) {
-         setShowUpgradeModal(true);
+         setShowUpgradeModal(true); 
+         // If user proceeds with free scan from modal, modal should call handleActualScanOrOpenCamera
       } else {
         setFeedbackMessage(`Limit scan harian gratis (${FREE_SCAN_LIMIT}) telah tercapai. Silakan upgrade ke Pro.`);
         setFeedbackType('warning');
-        setShowUpgradeModal(true);
+        setShowUpgradeModal(true); 
       }
     }
   };
 
   const handleImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
-    if (isCameraOpen) closeCamera();
+    if (isCameraOpen) closeCamera(); 
     const file = event.target.files?.[0];
     if (file) {
       if (!file.type.startsWith('image/')) {
         setFeedbackMessage('Format file tidak didukung. Harap unggah file gambar.'); setFeedbackType('error');
-        if (fileInputRef.current) fileInputRef.current.value = "";
+        if (fileInputRef.current) fileInputRef.current.value = ""; 
         return;
       }
       setUploadedImage(file);
-      if (imagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(imagePreviewUrl);
+      if (imagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(imagePreviewUrl); 
       setImagePreviewUrl(URL.createObjectURL(file));
-      setFeedbackMessage('Gambar diunggah. Siap untuk dipindai.'); setFeedbackType('info');
+      setFeedbackMessage('Gambar diunggah. Siap untuk dipindai.'); setFeedbackType('info'); 
     }
   };
 
   const handleRemoveImage = () => {
-    if (isCameraOpen) closeCamera();
-    if (imagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(imagePreviewUrl);
+    if (isCameraOpen) closeCamera(); 
+    if (imagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(imagePreviewUrl); 
     setUploadedImage(null); setImagePreviewUrl(null);
     setFeedbackMessage('Gambar dibuang.'); setFeedbackType('info');
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (fileInputRef.current) fileInputRef.current.value = ""; 
   };
 
   const getFeedbackStyles = () => {
@@ -738,23 +720,23 @@ Sentimen Media sosial: Netral cenderung positif`
       case 'success': return { borderColorClass: 'border-green-500', bgColorClass: 'bg-green-500/10', textColorClass: 'text-green-400', icon: <CheckCircle2 className="h-5 w-5 text-green-500" /> };
       case 'error': return { borderColorClass: 'border-red-500', bgColorClass: 'bg-red-500/10', textColorClass: 'text-red-400', icon: <AlertCircle className="h-5 w-5 text-red-500" /> };
       case 'warning': return { borderColorClass: 'border-yellow-500', bgColorClass: 'bg-yellow-500/10', textColorClass: 'text-yellow-400', icon: <ShieldAlert className="h-5 w-5 text-yellow-500" /> };
-      default: return { borderColorClass: 'border-blue-500', bgColorClass: 'bg-blue-500/10', textColorClass: 'text-blue-400', icon: <AlertCircle className="h-5 w-5 text-blue-500" /> };
+      default: return { borderColorClass: 'border-blue-500', bgColorClass: 'bg-blue-500/10', textColorClass: 'text-blue-400', icon: <AlertCircle className="h-5 w-5 text-blue-500" /> }; 
     }
   };
-  const feedbackStyles = getFeedbackStyles();
+  const feedbackStyles = getFeedbackStyles(); 
 
   const mainButtonText = () => {
-    if (isCameraOpen) return 'Kamera Aktif...';
+    if (isCameraOpen) return 'Kamera Aktif...'; 
     if (uploadedImage) return isProMode ? 'Pindai Gambar (Pro)' : 'Pindai Gambar';
     return isProMode ? 'Buka Kamera (Pro)' : 'Buka Kamera';
   };
-
-  const mainButtonDisabled = isScanningActive;
+  
+  const mainButtonDisabled = isScanningActive; 
 
   const handlePurchase = async (planKey: PaymentPlanKey) => {
-    if (!supabaseUser && supabaseUrl && supabaseAnonKey) {
+    if (!supabaseUser && supabaseUrl && supabaseAnonKey) { 
       setFeedbackMessage('Silakan login untuk melakukan pembelian.'); setFeedbackType('warning'); return;
-    } else if (!supabaseUrl || !supabaseAnonKey) {
+    } else if (!supabaseUrl || !supabaseAnonKey) { 
         setFeedbackMessage('Layanan pembayaran tidak tersedia (konfigurasi backend hilang).'); setFeedbackType('error'); return;
     }
 
@@ -768,46 +750,46 @@ Sentimen Media sosial: Netral cenderung positif`
 
     try {
       console.log("Attempting to call /api/payment/midtrans/charge (currently mocked) for plan:", selectedPlan.midtransPlanId, "User:", supabaseUser?.id);
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 1000)); 
       const mockMidtransToken = `mock-token-${selectedPlan.midtransPlanId}-${Date.now()}`;
-      const data = { token: mockMidtransToken, order_id: `mock-order-${Date.now()}` };
+      const data = { token: mockMidtransToken, order_id: `mock-order-${Date.now()}` }; 
 
       snap.pay(data.token, {
         onSuccess: function (result: SnapSuccessResult) {
           setFeedbackMessage(`Pembayaran ${selectedPlan.name} berhasil! ID Pesanan: ${result.order_id}`); setFeedbackType('success');
-          if (supabaseUser && supabaseUrl && supabaseAnonKey) {
+          if (supabaseUser && supabaseUrl && supabaseAnonKey) { 
             const expiry = new Date();
             if (selectedPlan.id === 'trial') expiry.setDate(expiry.getDate() + 7);
             else if (selectedPlan.id === 'monthly') expiry.setMonth(expiry.getMonth() + 1);
             else if (selectedPlan.id === 'yearly') expiry.setFullYear(expiry.getFullYear() + 1);
-
+            
             const updatedProfileData = {
-                id: userProfile?.id || supabaseUser.id,
+                id: userProfile?.id || supabaseUser.id, 
                 telegram_id: userProfile?.telegram_id,
                 telegram_username: userProfile?.telegram_username,
-                pro_plan_id_midtrans: selectedPlan.midtransPlanId,
+                pro_plan_id_midtrans: selectedPlan.midtransPlanId, 
                 pro_expiry_midtrans: expiry.toISOString(),
-                pro_plan_id_telegram: userProfile?.pro_plan_id_telegram,
+                pro_plan_id_telegram: userProfile?.pro_plan_id_telegram, 
                 pro_expiry_telegram: userProfile?.pro_expiry_telegram,
                 daily_scan_count: userProfile?.daily_scan_count || 0,
                 last_scan_date: userProfile?.last_scan_date || new Date().toISOString().split('T')[0],
-            } as Profile;
+            } as Profile; 
+            
+            setUserProfile(updatedProfileData); 
+            checkProStatus(updatedProfileData); 
 
-            setUserProfile(updatedProfileData);
-            checkProStatus(updatedProfileData);
-
-             if (supabaseUrl && supabaseAnonKey) {
+             if (supabaseUrl && supabaseAnonKey) { 
                 supabase.from('profiles')
-                    .update({
-                        pro_plan_id_midtrans: selectedPlan.midtransPlanId,
-                        pro_expiry_midtrans: expiry.toISOString()
+                    .update({ 
+                        pro_plan_id_midtrans: selectedPlan.midtransPlanId, 
+                        pro_expiry_midtrans: expiry.toISOString() 
                     })
                     .eq('id', supabaseUser.id)
                     .then(({ error: updateError }) => {
                         if (updateError) {
                             console.error('Gagal update profil setelah pembayaran (Midtrans):', updateError);
                             setFeedbackMessage('Pembayaran berhasil, namun gagal update status Pro di server. Mohon kontak dukungan.');
-                                setFeedbackType('warning');
+                                setFeedbackType('warning'); 
                         } else {
                             console.log("Profil Supabase diupdate setelah pembayaran Midtrans.");
                         }
@@ -818,34 +800,40 @@ Sentimen Media sosial: Netral cenderung positif`
         },
         onPending: function (result: SnapPendingResult) {
           setFeedbackMessage(`Pembayaran ${selectedPlan.name} tertunda. ID Pesanan: ${result.order_id}`); setFeedbackType('warning');
-          setIsLoadingPurchase(null);
+          setIsLoadingPurchase(null); 
         },
         onError: function (result: SnapErrorResult) {
           const errorMessages = Array.isArray(result.status_message) ? result.status_message.join(", ") : String(result.status_message);
           setFeedbackMessage(`Pembayaran ${selectedPlan.name} gagal: ${errorMessages}.`); setFeedbackType('error');
-          setIsLoadingPurchase(null);
+          setIsLoadingPurchase(null); 
         },
         onClose: function () {
-          if (isLoadingPurchase === planKey){
+          if (isLoadingPurchase === planKey){ 
             if (feedbackType !== 'success' && feedbackType !== 'warning' && feedbackType !== 'error') {
                  setFeedbackMessage('Popup pembayaran ditutup sebelum selesai.'); setFeedbackType('info');
             }
-            setIsLoadingPurchase(null);
+            setIsLoadingPurchase(null); 
           }
         },
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       setFeedbackMessage(`Gagal memulai pembayaran: ${message}`); setFeedbackType('error');
-      setIsLoadingPurchase(null);
+      setIsLoadingPurchase(null); 
     }
   };
-
+  
   const parseScanResults = (results: string): Array<{ title: string; content: string; isSubItem?: boolean }> => {
-    if (!results || typeof results !== 'string') return [{ title: "Error", content: "Hasil analisis tidak valid." }];
+    if (!results || typeof results !== 'string') return [{ title: "Error", content: "Hasil analisis tidak valid atau kosong." }];
+    
+    // Handle explicit error messages from backend
+    if (results.toLowerCase().startsWith('error:')) {
+        return [{ title: "Kesalahan Analisis", content: results.substring(6).trim() }];
+    }
+
     const lines = results.split('\n');
     const parsed: Array<{ title: string; content: string; isSubItem?: boolean }> = [];
-    let currentTitle = "Informasi Umum";
+    let currentTitle = "Informasi Umum"; 
     let currentContent = "";
     const mainTitles = ["Market Structure", "Candlestick Pattern", "Trend Market", "Signal Type", "Bandarmology", "Rekomendasi Trading", "Sentimen Pasar", "Sentimen Media sosial"];
 
@@ -855,74 +843,40 @@ Sentimen Media sosial: Netral cenderung positif`
         let isNewTitle = false;
         for (const mTitle of mainTitles) {
             if (trimmedLine.toLowerCase().startsWith(mTitle.toLowerCase() + ":")) {
-                if (currentContent.trim() || (currentTitle !== "Informasi Umum")) {
+                if (currentContent.trim() || (currentTitle !== "Informasi Umum" && !(parsed.length > 0 && parsed[parsed.length -1].title === currentTitle && !parsed[parsed.length-1].content.trim()))) {
                     if (currentTitle.toLowerCase() === "rekomendasi trading" && !currentContent.trim() && parsed.length > 0 && parsed[parsed.length - 1].title.toLowerCase() !== "rekomendasi trading") {
-                        // Avoid pushing empty "Rekomendasi Trading"
-                    } else if (currentContent.trim()) {
-                        parsed.push({ title: currentTitle, content: currentContent.trim() });
-                    } else if (parsed.length > 0 && parsed[parsed.length -1].title === currentTitle && !parsed[parsed.length-1].content.trim()){
-                        // Avoid pushing duplicate empty titles
-                    } else if (currentTitle !== "Informasi Umum" && !currentContent.trim()) {
-                        parsed.push({ title: currentTitle, content: "" });
+                        // Skip adding an empty "Rekomendasi Trading" section if it's just a title
+                    } else {
+                         parsed.push({ title: currentTitle, content: currentContent.trim() });
                     }
                 }
                 const splitPoint = trimmedLine.indexOf(':');
                 currentTitle = trimmedLine.substring(0, splitPoint).trim();
                 currentContent = trimmedLine.substring(splitPoint + 1).trim();
-                isNewTitle = true;
-                if (currentTitle.toLowerCase() === "rekomendasi trading" && !currentContent.trim()) {
-                    // Wait for sub-items or more content
-                }
-                break;
+                isNewTitle = true; 
+                break; 
             }
         }
         if (!isNewTitle) {
             currentContent += (currentContent ? "\n" : "") + trimmedLine;
         }
     }
-    if (currentTitle && (currentContent.trim() || (currentTitle !== "Informasi Umum" && !currentContent.trim()) || (currentTitle.toLowerCase() === "rekomendasi trading" && currentContent.includes("- ")))) {
+    // Push the last collected item
+    if (currentTitle && (currentContent.trim() || (currentTitle !== "Informasi Umum" && !(parsed.length > 0 && parsed[parsed.length -1].title === currentTitle && !parsed[parsed.length-1].content.trim())))) {
         parsed.push({ title: currentTitle, content: currentContent.trim() });
     } else if (parsed.length === 0 && results.trim()) { 
         return [{ title: "Analisis Detail", content: results.trim() }];
     }
-
+    
     if (parsed.length === 0 && !results.trim()) return [{ title: "Info", content: "Tidak ada hasil untuk ditampilkan." }];
     
-    const finalParsed: Array<{ title: string; content: string; isSubItem?: boolean }> = [];
-    let rekomendasiTradingContent = "";
-    let inRekomendasiSection = false;
-    // const rekomendasiSubItemsPrefixes = ["- time frame:", "- gaya trading:", "- resiko:", "- rekomendasi aksi:"]; // This line was unused
-
-    for (const item of parsed) {
-        if (item.title.toLowerCase() === "rekomendasi trading") {
-            if (inRekomendasiSection && rekomendasiTradingContent.trim()) {
-                finalParsed.push({ title: "Rekomendasi Trading", content: rekomendasiTradingContent.trim() });
-            }
-            rekomendasiTradingContent = item.content; 
-            inRekomendasiSection = true;
-        } else if (inRekomendasiSection) { 
-            // If in Rekomendasi section and current item is NOT "Rekomendasi Trading",
-            // it means the previous "Rekomendasi Trading" block has ended.
-            if (rekomendasiTradingContent.trim()) {
-                finalParsed.push({ title: "Rekomendasi Trading", content: rekomendasiTradingContent.trim() });
-            }
-            rekomendasiTradingContent = ""; // Reset for potentially next Rekomendasi block
-            inRekomendasiSection = false;
-            finalParsed.push(item); // Push the current non-Rekomendasi item
-        }
-         else { // Not in Rekomendasi section and current item is not "Rekomendasi Trading"
-            finalParsed.push(item); 
-        }
-    }
-    // After loop, if still in Rekomendasi section, push the accumulated content
-    if (inRekomendasiSection && rekomendasiTradingContent.trim()) {
-        finalParsed.push({ title: "Rekomendasi Trading", content: rekomendasiTradingContent.trim() });
+    // Filter out any initial "Informasi Umum" if its content is empty and other sections exist
+    if (parsed.length > 1 && parsed[0].title === "Informasi Umum" && !parsed[0].content.trim()) {
+        return parsed.slice(1);
     }
     
-    if (finalParsed.length === 0 && parsed.length > 0) return parsed;
-    return finalParsed.length > 0 ? finalParsed : [{ title: "Analisis", content: "Tidak ada detail yang dapat ditampilkan." }];
+    return parsed.length > 0 ? parsed : [{ title: "Analisis", content: "Tidak ada detail yang dapat ditampilkan." }];
   };
-
 
   return (
     <>
@@ -932,13 +886,18 @@ Sentimen Media sosial: Netral cenderung positif`
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-4 backdrop-blur-md">
             <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg">
               <div className="p-6 text-center border-b border-border">
-                <CheckCircle2 className="w-12 h-12 text-primary mx-auto mb-3" />
-                <h2 className="text-2xl font-semibold text-foreground">Hasil Analisis AI Trading</h2>
+                {scanResults.toLowerCase().startsWith('error:') ? 
+                    <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-3" /> :
+                    <CheckCircle2 className="w-12 h-12 text-primary mx-auto mb-3" /> 
+                }
+                <h2 className="text-2xl font-semibold text-foreground">
+                    {scanResults.toLowerCase().startsWith('error:') ? "Gagal Menganalisis" : "Hasil Analisis AI Trading"}
+                </h2>
               </div>
               <div className="p-6 max-h-[60vh] overflow-y-auto space-y-5 custom-scrollbar-dark">
                 {parseScanResults(scanResults).map((result, index) => (
                   <div key={index} className={`p-4 rounded-lg border ${result.isSubItem ? 'ml-4 bg-neutral-800/30 border-neutral-700' : 'bg-background/50 shadow-sm border-border'}`}>
-                    <h3 className={`font-semibold text-lg mb-2 ${result.isSubItem ? 'text-primary/90' : 'text-primary'}`}>{result.title}</h3>
+                    <h3 className={`font-semibold text-lg mb-2 ${result.isSubItem ? 'text-primary/90' : (result.title === "Kesalahan Analisis" ? 'text-destructive' : 'text-primary')}`}>{result.title}</h3>
                     <div className="whitespace-pre-wrap break-words text-sm text-muted-foreground leading-relaxed">
                       {result.content.split('\n').map((line, lineIndex) => {
                         const boldMatch = line.match(/\*\*(.*?)\*\*/);
@@ -955,7 +914,7 @@ Sentimen Media sosial: Netral cenderung positif`
                 {parseScanResults(scanResults).length === 0 && (<p className="text-muted-foreground text-center py-4">Tidak ada hasil untuk ditampilkan.</p>)}
               </div>
               <div className="p-6 border-t border-border">
-                <button onClick={handleCloseScanResultsPopup} className="w-full btn-primary">Tutup & Lanjutkan</button>
+                <button onClick={handleCloseScanResultsPopup} className="w-full btn-primary">Tutup</button>
               </div>
             </div>
           </div>
@@ -1111,16 +1070,8 @@ Sentimen Media sosial: Netral cenderung positif`
             </div>
           )}
         </div>
-        <footer className="mt-6 text-center">
-          <p className="text-xs text-muted-foreground">
-            {(!supabaseUrl || !supabaseAnonKey) ? "Layanan Supabase tidak terkonfigurasi." :
-              (isProMode && proExpiryDate ? `Mode Pro aktif hingga ${proExpiryDate}.` :
-                (supabaseUser ? `Mode Gratis: ${dailyScanCount}/${FREE_SCAN_LIMIT} scan hari ini. ${dailyScanCount >= FREE_SCAN_LIMIT ? 'Limit tercapai.' : ''}` :
-                  (isLoadingAuth ? 'Memuat status...' : 'Silakan login untuk memulai.')
-                ))
-            }
-          </p>
-        </footer>
+
+       
 
         <style jsx global>{`
           :root {
