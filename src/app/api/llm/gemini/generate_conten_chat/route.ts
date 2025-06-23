@@ -1,21 +1,37 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
+import { supabaseAdmin } from '@/lib/supabaseAdmin'; // Import the admin client
 
 const MODEL_NAME = "gemini-1.5-flash-latest"; 
 
-
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
 
   console.log(`API route /api/llm/gemini/generate_conten_chat hit at: ${new Date().toISOString()}`);
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  // Extract JWT from Authorization header
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return NextResponse.json({ error: 'Authorization header missing or malformed' }, { status: 401 });
+  }
+  const accessToken = authHeader.split(' ')[1];
 
-  if (!apiKey) {
-    console.error('GEMINI_API_KEY not found in environment variables.');
-    return NextResponse.json({ error: 'API key not found. Please set GEMINI_API_KEY in .env.local and restart the server.' }, { status: 500 });
+  // Verify JWT and get user
+  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(accessToken);
+
+  if (userError || !userData?.user) {
+    console.error('JWT verification failed:', userError?.message);
+    return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
   }
 
-  const genAI = new GoogleGenerativeAI(apiKey);
+  const user = userData.user;
+  const geminiApiKey = user.user_metadata?.gemini_api_key || process.env.GEMINI_API_KEY; // Fallback to env if not in metadata
+
+  if (!geminiApiKey) {
+    console.error(`GEMINI_API_KEY not found for user ${user.id} or in environment variables.`);
+    return NextResponse.json({ error: 'Gemini API key not configured for this user.' }, { status: 403 });
+  }
+
+  const genAI = new GoogleGenerativeAI(geminiApiKey);
 
   const generationConfig = {
     temperature: 0.9,

@@ -24,6 +24,11 @@ export async function updateUser(data: UserProfileData, userId: string): Promise
 
     if (updateError) {
       console.error('Supabase update error:', updateError);
+      // Check if the error is a duplicate key violation (code 23505) and specifically for wallet_address constraint
+      if (updateError.code === '23505' && updateError.message?.includes('profiles_wallet_address_key')) {
+        return { success: false, message: 'Gagal memperbarui profil: Alamat dompet sudah terdaftar untuk pengguna lain.', error: updateError };
+      }
+      // For other update errors
       return { success: false, message: 'Gagal memperbarui profil di Supabase.', error: updateError };
     }
 

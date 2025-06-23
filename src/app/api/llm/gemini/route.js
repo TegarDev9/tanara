@@ -3,15 +3,21 @@ import TelegramBot from 'node-telegram-bot-api';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+const DEFAULT_GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { message } = body;
+    const { message, geminiApiKey: userGeminiApiKey } = body;
+
+    const effectiveGeminiApiKey = userGeminiApiKey || DEFAULT_GEMINI_API_KEY;
+
+    if (!effectiveGeminiApiKey) {
+      return NextResponse.json({ status: 'error', message: 'Gemini API Key is not provided.' }, { status: 400 });
+    }
+
+    const genAI = new GoogleGenerativeAI(effectiveGeminiApiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
     if (message && message.text) {
       const chatId = message.chat.id;

@@ -13,6 +13,8 @@ export default function LoginButton() {
   const [currentSupabaseUser, setCurrentSupabaseUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [geminiApiKey, setGeminiApiKey] = useState<string>('');
+  const [deepSeekApiKey, setDeepSeekApiKey] = useState<string>('');
 
   // Effect 1: Manage Supabase auth state
   useEffect(() => {
@@ -134,10 +136,14 @@ export default function LoginButton() {
         }
       } else if (typeof e === 'object' && e !== null) {
         // Fallback for non-Error objects, try to stringify
-        try {
-          errorMessageText = JSON.stringify(e);
-        } catch { // Renamed to _jsonError to suppress unused variable warning
-          errorMessageText = `Non-serializable error object: ${String(e)}`;
+        if (Object.keys(e).length === 0) {
+          errorMessageText = 'Objek error kosong atau tidak terdefinisi.';
+        } else {
+          try {
+            errorMessageText = JSON.stringify(e);
+          } catch {
+            errorMessageText = `Objek error tidak dapat diserialisasi: ${String(e)}`;
+          }
         }
       }
       console.error('Error during profile upsert:', e);
@@ -145,6 +151,17 @@ export default function LoginButton() {
     }
   }, [fetchUserSubscription]);
 
+  // Effect 3: Load API keys from localStorage on component mount
+  useEffect(() => {
+    const storedGeminiKey = localStorage.getItem('geminiApiKey');
+    const storedDeepSeekKey = localStorage.getItem('deepSeekApiKey');
+    if (storedGeminiKey) {
+      setGeminiApiKey(storedGeminiKey);
+    }
+    if (storedDeepSeekKey) {
+      setDeepSeekApiKey(storedDeepSeekKey);
+    }
+  }, []);
 
   // Effect 2: Handle TON Wallet connection and link/create Supabase user
   useEffect(() => {
@@ -222,6 +239,40 @@ export default function LoginButton() {
               Langganan: <span className="font-bold">{userSubscriptionStatus}</span>
             </p>
           )}
+        </div>
+      )}
+
+      {currentSupabaseUser && (
+        <div className="mt-4 p-3 bg-gray-700 rounded text-sm break-all">
+          <p className="font-semibold mb-2">Pengaturan API Key:</p>
+          <div className="mb-3">
+            <label htmlFor="gemini-api-key" className="block text-xs font-medium text-gray-400 mb-1">Gemini API Key:</label>
+            <input
+              id="gemini-api-key"
+              type="password"
+              value={geminiApiKey}
+              onChange={(e) => {
+                setGeminiApiKey(e.target.value);
+                localStorage.setItem('geminiApiKey', e.target.value);
+              }}
+              className="w-full p-2 rounded bg-gray-800 border border-gray-600 text-white text-sm focus:outline-none focus:border-blue-500"
+              placeholder="Masukkan Gemini API Key Anda"
+            />
+          </div>
+          <div>
+            <label htmlFor="deepseek-api-key" className="block text-xs font-medium text-gray-400 mb-1">DeepSeek API Key:</label>
+            <input
+              id="deepseek-api-key"
+              type="password"
+              value={deepSeekApiKey}
+              onChange={(e) => {
+                setDeepSeekApiKey(e.target.value);
+                localStorage.setItem('deepSeekApiKey', e.target.value);
+              }}
+              className="w-full p-2 rounded bg-gray-800 border border-gray-600 text-white text-sm focus:outline-none focus:border-blue-500"
+              placeholder="Masukkan DeepSeek API Key Anda"
+            />
+          </div>
         </div>
       )}
 

@@ -23,6 +23,9 @@
     "@telegram-apps/bridge": "^2.8.2",
     "@telegram-apps/sdk-react": "^3.3.0",
     "@telegram-apps/telegram-ui": "^2.1.8",
+    "@ton/core": "^0.61.0",
+    "@ton/crypto": "^3.3.0",
+    "@ton/ton": "^15.3.0",
     "@tonconnect/ui-react": "^2.1.0",
     "@twa-dev/sdk": "^8.0.2",
     "eruda": "^3.0.1",
@@ -36,7 +39,8 @@
     "pullstate": "^1.25.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "supabase": "^2.23.4"
+    "supabase": "^2.23.4",
+    "tonweb": "^0.0.66"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

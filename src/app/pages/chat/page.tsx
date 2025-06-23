@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, FormEvent, useRef, useEffect, SVGProps } from 'react';
+import { supabase } from '@/lib/supabaseClient'; // Import the client-side supabase client
 
 // Define the color palette (REMOVED - Using Tailwind theme)
 // const colors = { ... };
@@ -51,6 +52,9 @@ export default function ChatPage() {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState('gemini-1.5-flash-latest');
+  const [geminiApiKey, setGeminiApiKey] = useState<string>('');
+  const [deepSeekApiKey, setDeepSeekApiKey] = useState<string>('');
+  const [accessToken, setAccessToken] = useState<string | null>(null); // State to hold the Supabase access token
   const availableModels = ['gemini-2.0-flash', 'gemini-pro', 'gemini-ultra'];
   
   const recommendedPrompts = [
@@ -70,6 +74,83 @@ export default function ChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Load API keys from localStorage on component mount
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  // Fetch Supabase session and API keys on component mount
+  useEffect(() => {
+    const getSessionAndApiKeys = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setAccessToken(session.access_token);
+        // Fetch user metadata for API keys
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (user && user.user_metadata) {
+          setGeminiApiKey(user.user_metadata.gemini_api_key || '');
+          setDeepSeekApiKey(user.user_metadata.deepseek_api_key || '');
+        } else if (error) {
+          console.error('Error fetching user metadata:', error.message);
+        }
+      } else {
+        setAccessToken(null);
+        setGeminiApiKey('');
+        setDeepSeekApiKey('');
+      }
+    };
+
+    getSessionAndApiKeys();
+
+    // Listen for auth state changes
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        setAccessToken(session.access_token);
+        // Re-fetch user metadata if session changes
+        supabase.auth.getUser().then(({ data: { user }, error }) => {
+          if (user && user.user_metadata) {
+            setGeminiApiKey(user.user_metadata.gemini_api_key || '');
+            setDeepSeekApiKey(user.user_metadata.deepseek_api_key || '');
+          } else if (error) {
+            console.error('Error fetching user metadata on auth change:', error.message);
+          }
+        });
+      } else {
+        setAccessToken(null);
+        setGeminiApiKey('');
+        setDeepSeekApiKey('');
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleSaveApiKeys = async () => {
+    if (!accessToken) {
+      alert('Anda harus login untuk menyimpan kunci API.');
+      return;
+    }
+
+    setIsLoading(true);
+    const { data: { user }, error } = await supabase.auth.updateUser({
+      data: {
+        gemini_api_key: geminiApiKey,
+        deepseek_api_key: deepSeekApiKey,
+      },
+    });
+
+    if (error) {
+      console.error('Error saving API keys:', error.message);
+      alert(`Gagal menyimpan kunci API: ${error.message}`);
+    } else {
+      console.log('API keys saved successfully:', user?.user_metadata);
+      alert('Kunci API berhasil disimpan!');
+    }
+    setIsLoading(false);
+  };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -104,9 +185,11 @@ export default function ChatPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`, // Use the fetched access token
         },
         body: JSON.stringify({ 
           prompt: currentInput,
+          // API keys are now managed via user metadata on the backend
           // model: selectedModel // Uncomment if your backend uses this
         }),
       });
@@ -222,6 +305,51 @@ export default function ChatPage() {
                 ))}
               </select>
             </div>
+
+            {/* Gemini API Key Input */}
+            <div className="mb-6">
+              <label htmlFor="gemini-api-key" className="block text-sm font-medium mb-2 text-foreground">
+                Kunci API Gemini (Opsional, akan disimpan di profil Anda):
+              </label>
+              <input
+                type="password"
+                id="gemini-api-key"
+                value={geminiApiKey}
+                onChange={(e) => setGeminiApiKey(e.target.value)}
+                placeholder="Masukkan kunci API Gemini Anda"
+                className={`w-full p-3 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all duration-200 ease-in-out bg-background text-foreground placeholder:text-muted-foreground`}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Ini akan disimpan di profil Supabase Anda.
+              </p>
+            </div>
+
+            {/* DeepSeek API Key Input */}
+            <div className="mb-6">
+              <label htmlFor="deepseek-api-key" className="block text-sm font-medium mb-2 text-foreground">
+                Kunci API DeepSeek (Opsional, akan disimpan di profil Anda):
+              </label>
+              <input
+                type="password"
+                id="deepseek-api-key"
+                value={deepSeekApiKey}
+                onChange={(e) => setDeepSeekApiKey(e.target.value)}
+                placeholder="Masukkan kunci API DeepSeek Anda"
+                className={`w-full p-3 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all duration-200 ease-in-out bg-background text-foreground placeholder:text-muted-foreground`}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Ini akan disimpan di profil Supabase Anda.
+              </p>
+            </div>
+
+            {/* Save API Keys Button */}
+            <button
+              onClick={handleSaveApiKeys}
+              className="w-full p-3 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity duration-200 ease-in-out mb-6 disabled:opacity-60 disabled:cursor-not-allowed"
+              disabled={isLoading}
+            >
+              {isLoading ? 'Menyimpan...' : 'Simpan Kunci API'}
+            </button>
 
             {/* Recommended Prompts */}
             <div className="mb-2">
