@@ -1,157 +1,26 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef, ChangeEvent, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, ChangeEvent } from 'react';
 import { Camera, AlertCircle, CheckCircle2, UploadCloud, XCircle, Loader2, ShieldAlert, VideoOff } from 'lucide-react';
 
-// --- Type Declarations ---
-interface CustomSupabaseClient {
-  auth: {
-    getSession: () => Promise<{ data: { session: CustomSession | null }; error: CustomAuthError | null }>;
-    onAuthStateChange: (callback: (event: string, session: CustomSession | null) => void) => { data: { subscription: CustomSupabaseSubscription }; error: null };
-    signInAnonymously: () => Promise<{ data: { user: CustomUser | null; session: CustomSession | null }; error: CustomAuthError | null }>;
-  };
-  from: (tableName: string) => {
-    select: (selectStatement?: string) => {
-      eq: (column: string, value: unknown) => {
-        single: <T = unknown>() => Promise<{ data: T | null; error: CustomPostgrestError | null }>;
-      };
-    };
-    update: <T = unknown>(values: object) => {
-      eq: (column: string, value: unknown) => Promise<{ data: T[] | null; error: CustomPostgrestError | null }>;
-    };
-  };
-  rpc: <T = unknown>(...args: unknown[]) => Promise<{ data: T | null; error: Error | null }>;
-  storage: {
-    from: (bucketName: string) => {
-      upload: (path: string, file: File) => Promise<{ data: { path: string } | null; error: Error | null }>;
-      download: (path: string) => Promise<{ data: Blob | null; error: Error | null }>;
-    };
-  };
-}
-
-interface CustomUser {
-  id: string;
-  aud: string;
-  role: string;
-  email?: string;
-  app_metadata: object;
-  user_metadata: object;
-  created_at: string;
-  is_anonymous: boolean;
-}
-
-interface CustomSession {
-  access_token: string;
-  token_type: string;
-  user: CustomUser;
-  expires_at: number;
-  refresh_token: string;
-}
-
-interface CustomSupabaseSubscription {
-  unsubscribe: () => void;
-}
-
-// Changed from an empty interface to a type alias to resolve ESLint error
-type CustomAuthError = Error;
-
-
-interface CustomPostgrestError extends Error {
-  code?: string; // Based on error.code !== 'PGRST116'
-}
-
-type SupabaseClient = CustomSupabaseClient;
-type User = CustomUser;
-type SupabaseSubscription = CustomSupabaseSubscription;
-type AuthError = CustomAuthError;
-type Session = CustomSession;
-type PostgrestError = CustomPostgrestError;
-
+// --- Type Declarations (Monetag Ad) ---
+// Only keep types relevant to Monetag if it's still used.
 declare global {
   interface Window {
-    supabase: {
-      createClient: (url: string, key: string) => SupabaseClient;
-    };
     znymDisplayRewardedAd?: (options: { zoneid: string | number, callbacks?: MonetagAdCallbacks }) => void;
   }
 }
 
+interface MonetagAdCallbacks {
+  onShow?: () => void;
+  onClose?: (rewardGranted: boolean) => void;
+  onComplete?: () => void;
+  onError?: (error: Error) => void;
+}
+// --- End Monetag Ad Types ---
+
 // --- Environment Variables ---
-// These variables are intended to be populated by the Next.js build process
-// from your .env.local file. They will not work in a simple browser preview
-// unless they are globally defined or replaced.
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const REWARDED_INTERSTITIAL_ZONE_ID = process.env.NEXT_PUBLIC_REWARDED_INTERSTITIAL_ZONE_ID || "";
-
-
-// --- Supabase Mock Client ---
-// A standalone mock client for when Supabase isn't configured.
-const mockSupabaseClient: SupabaseClient = {
-  auth: {
-    getSession: async () => ({ data: { session: null }, error: new Error('Supabase mock: getSession error') as AuthError }),
-    onAuthStateChange: (callback: (event: string, session: Session | null) => void) => {
-      void callback; // Suppress unused variable warning
-      console.log("Supabase mock: onAuthStateChange invoked.");
-      return { data: { subscription: { unsubscribe: () => {} } as SupabaseSubscription }, error: null };
-    },
-    signInAnonymously: async () => {
-      console.warn("Supabase mock: signInAnonymously");
-      const mockUser: User = {
-          id: 'mock-anon-user-id', aud: 'authenticated', role: 'anonymous', email: undefined,
-          app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString(), is_anonymous: true,
-      };
-      const mockSession: Session = {
-          access_token: 'mock-anon-token', token_type: 'bearer', user: mockUser,
-          expires_at: Date.now() + 3600000, refresh_token: 'mock-refresh-token'
-      };
-      return { data: { user: mockUser, session: mockSession }, error: null };
-    }
-  },
-  from: (tableName: string) => ({
-    select: (selectStatement?: string) => {
-      void selectStatement;
-      return {
-        eq: (column: string, value: unknown) => {
-          void column;
-          void value;
-          return {
-            single: async () => ({ data: null, error: new Error(`Supabase mock: from(${tableName}).select().eq().single() error`) as PostgrestError }),
-          };
-        },
-      };
-    },
-    update: (values: object) => {
-      void values;
-      return {
-        eq: (column: string, value: unknown) => {
-          void column;
-          void value;
-          return Promise.resolve({ data: null, error: new Error(`Supabase mock: from(${tableName}).update().eq() error`) as PostgrestError });
-        },
-      };
-    },
-  }),
-  rpc: async (...args: unknown[]) => {
-    void args;
-    return { data: null, error: new Error('Supabase mock: rpc error') };
-  },
-  storage: {
-    from: (bucketName: string) => {
-      void bucketName;
-      return {
-        upload: async (path: string, file: File) => {
-          void file;
-          return { data: { path: path }, error: null };
-        },
-        download: async (path: string) => {
-          void path;
-          return { data: null, error: new Error('Supabase mock: storage.download error') };
-        },
-      };
-    },
-  }
-};
 
 interface MonetagAdCallbacks {
   onShow?: () => void;
@@ -162,22 +31,16 @@ interface MonetagAdCallbacks {
 // --- End Monetag Ad Types ---
 
 export default function ScannerPage() {
-  const [feedbackMessage, setFeedbackMessage] = useState('Sedang memuat fitur, mohon tunggu...');
+  const [feedbackMessage, setFeedbackMessage] = useState('Siap untuk memindai.');
   const [feedbackType, setFeedbackType] = useState<'success' | 'error' | 'info' | 'warning'>('info');
   const [isScanningActive, setIsScanningActive] = useState(false);
-
-  const [supabaseUser, setSupabaseUser] = useState<User | null>(null);
-  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
 
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [showScanResultsPopup, setShowScanResultsPopup] = useState(false);
   const [scanResults, setScanResults] = useState('');
 
-  const [dailyScanCount, setDailyScanCount] = useState(0);
-  const FREE_SCAN_LIMIT = 5;
   const [isAdLoadingOrShowing, setIsAdLoadingOrShowing] = useState(false);
-  const [showAdPromptPopup, setShowAdPromptPopup] = useState(false);
 
 
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -186,38 +49,16 @@ export default function ScannerPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevImagePreviewUrlBlobRef = useRef<string | null>(null);
-  const authSubscriptionRef = useRef<CustomSupabaseSubscription | null>(null);
-
   const [showCameraErrorModal, setShowCameraErrorModal] = useState(false);
-  const [isSupabaseReady, setIsSupabaseReady] = useState(false);
 
-  // Dynamically load Supabase script
-  useEffect(() => {
-    const scriptId = 'supabase-script';
-    if (document.getElementById(scriptId)) {
-        setIsSupabaseReady(true);
-        return;
-    }
-    const script = document.createElement('script');
-    script.id = scriptId;
-    script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-    script.async = true;
-    script.onload = () => setIsSupabaseReady(true);
-    script.onerror = () => {
-        console.error('Failed to load Supabase script.');
-        setFeedbackMessage('Gagal memuat komponen utama. Fitur mungkin tidak tersedia.');
-        setFeedbackType('error');
-    };
-    document.head.appendChild(script);
+  // Placeholder for increaseScanQuota since it was removed with Supabase.
+  // If ad rewards are still desired, this function needs to be re-implemented
+  // to update a new persistence layer or simply provide a client-side benefit.
+  const increaseScanQuota = useCallback((amount: number) => {
+    console.log(`Simulating increase scan quota by ${amount}. (Supabase removed)`);
+    // You might add a local state for scan count if needed for UI,
+    // but it won't be persisted without a backend.
   }, []);
-
-  // Initialize Supabase client once the script is ready
-  const supabase: SupabaseClient = useMemo(() => {
-    if (isSupabaseReady && supabaseUrl && supabaseAnonKey && window.supabase) {
-        return window.supabase.createClient(supabaseUrl, supabaseAnonKey);
-    }
-    return mockSupabaseClient;
-  }, [isSupabaseReady]);
 
   useEffect(() => {
     if (REWARDED_INTERSTITIAL_ZONE_ID && typeof window !== 'undefined' && !window.znymDisplayRewardedAd) {
@@ -256,86 +97,6 @@ export default function ScannerPage() {
     }
   }, []);
 
-  const fetchUserProfile = useCallback(async (userId: string) => {
-    if (!supabaseUrl || !supabaseAnonKey || !isSupabaseReady) {
-        setFeedbackMessage('Konfigurasi Supabase tidak lengkap. Tidak dapat mengambil profil.');
-        setFeedbackType('error');
-        setIsLoadingAuth(false);
-        return;
-    }
-    setIsLoadingAuth(true);
-    try {
-      interface ProfileData {
-        daily_scan_count: number;
-        last_scan_date: string;
-      }
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*, daily_scan_count, last_scan_date')
-        .eq('id', userId)
-        .single<ProfileData>();
-
-      if (error && error.code !== 'PGRST116') { // Ignore "No rows found" error
-        throw error;
-      }
-      if (data) {
-        const today = new Date().toISOString().split('T')[0];
-        let currentScans = data.daily_scan_count || 0;
-        if (data.last_scan_date !== today) {
-          currentScans = 0;
-          supabase.from('profiles').update({ daily_scan_count: 0, last_scan_date: today }).eq('id', userId)
-          .then(({ error: updateError }: { error: PostgrestError | null }) => {
-            if (updateError) console.error('Error resetting daily scan count:', updateError);
-          });
-        }
-        setDailyScanCount(currentScans);
-      } else {
-        setDailyScanCount(0);
-      }
-    } catch (error: unknown) {
-      console.error('Error fetching user profile:', error);
-      const message = error instanceof Error ? error.message : String(error);
-      setFeedbackMessage(`Gagal memuat profil: ${message}`);
-      setFeedbackType('error');
-    } finally {
-      setIsLoadingAuth(false);
-    }
-  }, [supabase, isSupabaseReady]);
-
-  const increaseScanQuota = useCallback(async (amount: number) => {
-    if (!supabaseUser || !supabaseUrl || !supabaseAnonKey) {
-        setFeedbackMessage('Tidak dapat menambah kuota scan: pengguna tidak login atau konfigurasi Supabase tidak lengkap.');
-        setFeedbackType('error');
-        return;
-    }
-
-    setFeedbackMessage(`Menambah kuota scan sebanyak ${amount}...`);
-    setFeedbackType('info');
-
-    try {
-        const newCount = dailyScanCount + amount;
-        const today = new Date().toISOString().split('T')[0];
-
-        const { error } = await supabase
-            .from('profiles')
-            .update({ daily_scan_count: newCount, last_scan_date: today })
-            .eq('id', supabaseUser.id);
-
-        if (error) {
-            throw error;
-        }
-
-        setDailyScanCount(newCount);
-        setFeedbackMessage(`Kuota scan berhasil ditambah! Anda sekarang memiliki ${newCount} scan hari ini.`);
-        setFeedbackType('success');
-    } catch (error: unknown) {
-        console.error('Error increasing scan quota:', error);
-        const message = error instanceof Error ? error.message : String(error);
-        setFeedbackMessage(`Gagal menambah kuota scan: ${message}`);
-        setFeedbackType('error');
-    }
-  }, [dailyScanCount, supabaseUser, supabase]);
-
   const handleShowRewardedAd = useCallback(() => {
     if (isAdLoadingOrShowing) {
         console.log("Ad already loading or showing.");
@@ -372,111 +133,30 @@ export default function ScannerPage() {
                     if (rewardGranted) {
                         setFeedbackMessage('Terima kasih telah menonton iklan!');
                         setFeedbackType('success');
-                        increaseScanQuota(5); // Add 5 scans after watching ad
+                        increaseScanQuota(5); // Call the local increaseScanQuota
                     } else {
-                        setFeedbackMessage('Iklan ditutup sebelum selesai.');
-                        setFeedbackType('info');
-                    }
-                    setShowAdPromptPopup(false); // Close ad prompt after ad interaction
-                },
-                onComplete: () => {
-                    console.log('Monetag Rewarded Ad: Completed/Reward');
-                },
-                onError: (error: Error) => {
-                    console.error('Monetag Rewarded Ad: Error', error);
-                    setFeedbackMessage(`Gagal memuat iklan: ${error.message}`);
-                    setFeedbackType('error');
-                    setIsAdLoadingOrShowing(false);
-                    setShowAdPromptPopup(false); // Close ad prompt on error
-                }
-            }
-        });
-    } catch (e) {
-        console.error("Error calling Monetag ad function:", e);
-        setFeedbackMessage('Gagal menampilkan iklan.');
-        setFeedbackType('error');
-        setIsAdLoadingOrShowing(false);
-        setShowAdPromptPopup(false); // Close ad prompt on error
-    }
-  }, [isAdLoadingOrShowing, increaseScanQuota]);
-
-  useEffect(() => {
-    if (!isSupabaseReady || !supabaseUrl || !supabaseAnonKey) {
-        if (!supabaseUrl || !supabaseAnonKey) {
-            setFeedbackMessage('Konfigurasi Supabase tidak lengkap. Fitur autentikasi dinonaktifkan.');
-            setFeedbackType('error');
-        }
-        setIsLoadingAuth(false);
-        return;
-    }
-
-    // Ensure we are using the real Supabase client, not the mock
-    // This check is crucial because `supabase` is a useMemo dependency,
-    // and it might initially be the mock client before `isSupabaseReady` becomes true.
-    if (supabase === mockSupabaseClient) {
-        console.log('Supabase client is still mock, waiting for real client.');
-        setIsLoadingAuth(false); // Ensure loading state is handled if waiting
-        return;
-    }
-
-    const getInitialSession = async () => {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) {
-        console.error("Error getting session:", sessionError);
-        setFeedbackMessage('Gagal mendapatkan sesi autentikasi.');
-        setFeedbackType('error');
-        setIsLoadingAuth(false);
-        return;
-      }
-      if (session?.user) {
-        setSupabaseUser(session.user);
-        await fetchUserProfile(session.user.id);
-      } else {
-        setIsLoadingAuth(false);
-        if(!feedbackMessage.startsWith('Gagal') && !feedbackMessage.startsWith('Silakan login')) {
-          setFeedbackMessage('Silakan login untuk menggunakan fitur Scanner Pro.');
-          setFeedbackType('warning');
-        }
-      }
-    };
-    getInitialSession();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (_event: string, session: Session | null) => {
-        setSupabaseUser(session?.user ?? null);
-        if (session?.user) {
-          await fetchUserProfile(session.user.id);
-        } else {
-          setIsLoadingAuth(false);
-        }
-      }
-    );
-    
-    authSubscriptionRef.current = authListener?.subscription;
-
-    return () => {
-      authSubscriptionRef.current?.unsubscribe();
-    };
-  }, [supabase, isSupabaseReady, fetchUserProfile, feedbackMessage]);
-
-    useEffect(() => {
-      if( !supabaseUrl || !supabaseAnonKey) return;
-
-      if (isLoadingAuth) {
-          setFeedbackMessage('Memeriksa status autentikasi');
-          setFeedbackType('info');
-      } else if (supabaseUser) {
-          if (feedbackMessage.includes('memuat fitur') || feedbackMessage.includes('Memeriksa status') || feedbackMessage.startsWith('Sedang memuat')) {
-              setFeedbackMessage('Anda menggunakan mode gratis');
-              setFeedbackType('info');
+                    setFeedbackMessage('Iklan ditutup sebelum selesai.');
+                    setFeedbackType('info');
+                  }
+              },
+              onComplete: () => {
+                  console.log('Monetag Rewarded Ad: Completed/Reward');
+              },
+              onError: (error: Error) => {
+                  console.error('Monetag Rewarded Ad: Error', error);
+                  setFeedbackMessage(`Gagal memuat iklan: ${error.message}`);
+                  setFeedbackType('error');
+                  setIsAdLoadingOrShowing(false);
+              }
           }
-      } else if (!supabaseUser && !isLoadingAuth){
-      if (!feedbackMessage.startsWith('Gagal') && !feedbackMessage.startsWith('Silakan login')) {
-        setFeedbackMessage('Silakan login untuk menggunakan scanner.');
-        setFeedbackType('warning');
-      }
-      }
-    }, [supabaseUser, isLoadingAuth, feedbackMessage]);
+      });
+  } catch (e) {
+      console.error("Error calling Monetag ad function:", e);
+      setFeedbackMessage('Gagal menampilkan iklan.');
+      setFeedbackType('error');
+      setIsAdLoadingOrShowing(false);
+  }
+}, [isAdLoadingOrShowing, increaseScanQuota]);
 
 
   useEffect(() => {
@@ -567,21 +247,12 @@ export default function ScannerPage() {
     try {
       setFeedbackMessage('Mengirim ke AI untuk analisis...');
       
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError || !sessionData.session?.access_token) {
-          console.error('Error getting Supabase session or token:', sessionError);
-          setFeedbackMessage('Gagal mendapatkan token otorisasi. Silakan login ulang.');
-          setFeedbackType('error');
-          setIsScanningActive(false);
-          return;
-      }
-      const authToken = sessionData.session.access_token;
-
       const response = await fetch('/api/llm/gemini/analyze-image', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
+          // Authorization header removed as Supabase authentication is no longer used.
+          // If TON-based authentication is implemented, a new token should be passed here.
         },
         body: JSON.stringify({
           prompt: tradingPrompt,
@@ -609,17 +280,6 @@ export default function ScannerPage() {
         setShowScanResultsPopup(true);
         setFeedbackMessage('Analisis AI berhasil!');
         setFeedbackType('success');
-        if (supabaseUser && supabaseUrl && supabaseAnonKey) {
-          const newCount = dailyScanCount + 1;
-          setDailyScanCount(newCount);
-          const today = new Date().toISOString().split('T')[0];
-          supabase.from('profiles')
-            .update({ daily_scan_count: newCount, last_scan_date: today })
-            .eq('id', supabaseUser.id)
-            .then(({ error: updateError }: { error: PostgrestError | null }) => {
-              if (updateError) console.error('Error incrementing scan count:', updateError);
-            });
-        }
       } else {
         console.error('Backend response missing text field:', result);
         const errorMessage = result.error || 'Format respons dari AI tidak valid.';
@@ -639,7 +299,7 @@ export default function ScannerPage() {
     } finally {
       setIsScanningActive(false);
     }
-  }, [dailyScanCount, supabaseUser, convertFileToBase64, supabase]);
+  }, [convertFileToBase64]); // Removed dailyScanCount, supabaseUser, supabase
 
   const closeCamera = useCallback(() => {
     if (videoRef.current?.srcObject) {
@@ -755,47 +415,27 @@ export default function ScannerPage() {
     
     setScanResults('');
     
-    if (supabaseUser && supabaseUrl && supabaseAnonKey && !isErrorResult) {
-        if (REWARDED_INTERSTITIAL_ZONE_ID) {
-            handleShowRewardedAd();
-        } else {
-            setFeedbackMessage('Hasil analisis ditutup.');
-            setFeedbackType('info');
-        }
-    } else if (isErrorResult) {
+    if (isErrorResult) {
         setFeedbackMessage('Analisis gagal. Silakan coba lagi atau unggah gambar lain.');
         setFeedbackType('warning');
     } else {
         setFeedbackMessage('Hasil analisis ditutup.');
         setFeedbackType('info');
     }
+    // If rewarded ads are still desired, call handleShowRewardedAd unconditionally or based on new logic.
+    if (REWARDED_INTERSTITIAL_ZONE_ID) {
+        handleShowRewardedAd();
+    }
   };
 
   const handleActualScanOrOpenCamera = async () => {
-    if (!supabaseUser && (supabaseUrl && supabaseAnonKey)) {
-        setFeedbackMessage('Anda harus login untuk menggunakan fitur ini.');
-        setFeedbackType('warning');
-        return;
-    }
     if (uploadedImage) await performGeminiScanViaBackend(uploadedImage);
     else await openCamera();
   };
 
   const handleMainScanClick = async () => {
     if (isScanningActive || isCameraOpen) return;
-    if (!supabaseUser && supabaseUrl && supabaseAnonKey) {
-      setFeedbackMessage('Silakan login untuk menggunakan fitur ini.'); setFeedbackType('warning'); return;
-    } else if (!supabaseUrl || !supabaseAnonKey) {
-      setFeedbackMessage('Layanan tidak tersedia (konfigurasi backend hilang).'); setFeedbackType('error'); return;
-    }
-
-    if (dailyScanCount < FREE_SCAN_LIMIT) {
-        await handleActualScanOrOpenCamera();
-    } else {
-      setFeedbackMessage(`Limit scan harian gratis (${FREE_SCAN_LIMIT}) telah tercapai.`);
-      setFeedbackType('warning');
-      setShowAdPromptPopup(true); // Show ad prompt when limit is reached
-    }
+    await handleActualScanOrOpenCamera();
   };
 
   const handleImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
@@ -892,14 +532,8 @@ export default function ScannerPage() {
     return parsed.length > 0 ? parsed : [{ title: "Analisis", content: "Tidak ada detail yang dapat ditampilkan." }];
   };
 
-  if (!isSupabaseReady) {
-      return (
-        <main className="flex min-h-screen flex-col items-center justify-center p-4 font-sans relative bg-background text-foreground">
-             <Loader2 className="h-16 w-16 animate-spin text-primary" />
-             <p className="mt-4 text-muted-foreground">Memuat komponen...</p>
-        </main>
-      );
-  }
+  // Removed isSupabaseReady check as Supabase is no longer used.
+  // If other critical components need loading, a new check should be implemented.
 
   return (
     <>
@@ -937,25 +571,6 @@ export default function ScannerPage() {
               </div>
               <div className="p-6 border-t border-border">
                 <button onClick={handleCloseScanResultsPopup} className="w-full btn-primary">Tutup</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Ad Prompt Popup */}
-        {showAdPromptPopup && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[101] p-4 backdrop-blur-md">
-            <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 text-center">
-              <ShieldAlert className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
-              <h2 className="text-xl font-semibold text-foreground mb-2">Limit Scan Harian Tercapai!</h2>
-              <p className="text-sm text-muted-foreground mb-6">Anda telah mencapai batas {FREE_SCAN_LIMIT} scan gratis hari ini. Tonton iklan singkat untuk mendapatkan 5 scan tambahan!</p>
-              <div className="space-y-3">
-                <button onClick={handleShowRewardedAd} disabled={isAdLoadingOrShowing} className="w-full btn-primary">
-                  {isAdLoadingOrShowing ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null} Tonton Iklan (Dapatkan 5 Scan)
-                </button>
-                <button onClick={() => setShowAdPromptPopup(false)} disabled={isAdLoadingOrShowing} className="w-full btn-neutral">
-                  Nanti Saja
-                </button>
               </div>
             </div>
           </div>
@@ -1039,12 +654,11 @@ export default function ScannerPage() {
           )}
         </div>
         
+        {/* Footer message related to Supabase and scan limits removed. */}
+        {/* If a new status message is needed, it should be added here. */}
         <footer className="mt-6 text-center">
           <p className="text-xs text-muted-foreground">
-            {(!supabaseUrl || !supabaseAnonKey) ? "Layanan Supabase tidak terkonfigurasi." :
-              (supabaseUser ? `Mode Gratis: ${dailyScanCount}/${FREE_SCAN_LIMIT} scan hari ini. ${dailyScanCount >= FREE_SCAN_LIMIT ? 'Limit tercapai.' : ''}` :
-                  (isLoadingAuth ? 'Memuat status...' : 'Silakan login untuk memulai.')
-                )}
+            Pemindai Analisis Trading.
           </p>
         </footer>
 

@@ -1,59 +1,14 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, Part, HarmProbability, FinishReason } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
-import * as jose from 'jose';
 
 const MODEL_NAME = "gemini-1.5-flash-latest"; // Updated model name
-
-// Helper function to verify JWT
-async function verifyToken(token: string): Promise<jose.JWTPayload | null> {
-  const publicKeyPemBase64 = process.env.SUPABASE_JWT_SECRET; 
-  const supabaseAuthIssuer = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1`;
-
-
-  if (!publicKeyPemBase64) {
-    console.error('JWT signing secret/public key (SUPABASE_JWT_SECRET or equivalent) not found in environment variables.');
-    return null;
-  }
-
-  try {
-    // If using HS256 (symmetric, with a secret - this is more common for Supabase JWTs by default)
-    // Ensure SUPABASE_JWT_SECRET is the actual JWT secret from your Supabase project settings.
-    const secret = new TextEncoder().encode(publicKeyPemBase64);
-    const { payload } = await jose.jwtVerify(token, secret, {
-      issuer: supabaseAuthIssuer,
-      audience: 'authenticated', // Standard Supabase audience for user tokens
-    });
-    return payload;
-
-  } catch (error: unknown) {
-    console.error('JWT verification failed:', error instanceof Error ? error.message : String(error));
-    if (error instanceof jose.errors.JWTExpired) {
-        console.error('JWT has expired.');
-    } else if (error instanceof jose.errors.JWSSignatureVerificationFailed) {
-        console.error('JWT signature verification failed. Check your SUPABASE_JWT_SECRET or public key.');
-    } else if (error instanceof jose.errors.JWTClaimValidationFailed) {
-        console.error(`JWT claim validation failed: ${error.message}. Check issuer and audience.`);
-    }
-    return null;
-  }
-}
 
 export async function POST(req: Request) {
   console.log("API Route: /api/llm/gemini/analyze-image invoked.");
 
-  const authHeader = req.headers.get('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    console.warn('Authorization header missing or not Bearer type.');
-    return NextResponse.json({ error: 'Akses ditolak. Token otorisasi tidak ada atau format salah.' }, { status: 401 });
-  }
-  const token = authHeader.substring(7); 
-
-  const decodedToken = await verifyToken(token);
-  if (!decodedToken) {
-    console.warn('JWT verification failed or token is invalid.');
-    return NextResponse.json({ error: 'Akses ditolak. Token otorisasi tidak valid atau kedaluwarsa.' }, { status: 401 });
-  }
-  console.log(`Authorized access for user ID (sub): ${decodedToken.sub}`);
+  // Authentication logic (Supabase JWT verification) removed.
+  // If authentication is required, it needs to be re-implemented using TON-based methods.
+  // For now, this route will be publicly accessible.
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {

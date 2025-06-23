@@ -1,6 +1,5 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 import { NextResponse, NextRequest } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabaseAdmin'; // Import the admin client
 
 const MODEL_NAME = "gemini-1.5-flash-latest"; 
 
@@ -13,22 +12,15 @@ export async function POST(req: NextRequest) {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return NextResponse.json({ error: 'Authorization header missing or malformed' }, { status: 401 });
   }
-  const accessToken = authHeader.split(' ')[1];
-
-  // Verify JWT and get user
-  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(accessToken);
-
-  if (userError || !userData?.user) {
-    console.error('JWT verification failed:', userError?.message);
-    return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
-  }
-
-  const user = userData.user;
-  const geminiApiKey = user.user_metadata?.gemini_api_key || process.env.GEMINI_API_KEY; // Fallback to env if not in metadata
+  // With Supabase removed, authentication needs to be re-evaluated.
+  // For now, we will bypass user-specific API key retrieval and use a global one.
+  // In a production environment, you would implement TON-based authentication
+  // and retrieve user-specific API keys from a new data store.
+  const geminiApiKey = process.env.GEMINI_API_KEY;
 
   if (!geminiApiKey) {
-    console.error(`GEMINI_API_KEY not found for user ${user.id} or in environment variables.`);
-    return NextResponse.json({ error: 'Gemini API key not configured for this user.' }, { status: 403 });
+    console.error(`GEMINI_API_KEY not found in environment variables.`);
+    return NextResponse.json({ error: 'Gemini API key not configured.' }, { status: 403 });
   }
 
   const genAI = new GoogleGenerativeAI(geminiApiKey);

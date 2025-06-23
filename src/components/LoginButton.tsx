@@ -1,218 +1,74 @@
-import { supabase } from '@/lib/supabaseClient';
 import {
   useTonWallet,
-  Wallet,
   TonConnectButton
 } from '@tonconnect/ui-react';
-import { useCallback, useEffect, useState } from 'react';
-import type { User, Subscription as SupabaseSubscription } from '@supabase/supabase-js';
+import { useEffect, useState } from 'react';
 
 export default function LoginButton() {
   const wallet = useTonWallet();
-  const [userSubscriptionStatus, setUserSubscriptionStatus] = useState<string | null>(null);
-  const [currentSupabaseUser, setCurrentSupabaseUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [geminiApiKey, setGeminiApiKey] = useState<string>('');
-  const [deepSeekApiKey, setDeepSeekApiKey] = useState<string>('');
+  const [isLoggedIn, setIsLoggedIn] = useState(false); // New state to track TON login status
 
-  // Effect 1: Manage Supabase auth state
   useEffect(() => {
-    setIsLoading(true);
-    setErrorMessage(null);
-
-    const getInitialSession = async () => {
-      try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) {
-          console.error("Error getting initial session:", sessionError);
-        }
-        setCurrentSupabaseUser(session?.user ?? null);
-        console.log('Initial Supabase session user:', session?.user?.id ?? 'None');
-      } catch (e) {
-        console.error("Exception during initial session fetch:", e);
-        setErrorMessage("Gagal memuat sesi awal.");
-      }
-    };
-
-    getInitialSession();
-
-    const { data: authListenerData } = supabase.auth.onAuthStateChange((event, session) => {
-      setCurrentSupabaseUser(session?.user ?? null);
-      console.log('Supabase auth state changed. Event:', event, '. New session user ID:', session?.user?.id ?? 'None');
-      if (event === 'SIGNED_OUT') {
-        setUserSubscriptionStatus(null);
-        setErrorMessage(null);
-      }
-      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
-        setIsLoading(false);
-      }
-    });
-
-    const actualSubscription: SupabaseSubscription | undefined = authListenerData?.subscription;
-
-    return () => {
-      actualSubscription?.unsubscribe();
-    };
-  }, []);
-
-  const fetchUserSubscription = useCallback(async (userId: string) => {
-    if (!supabase) {
-      console.error('Supabase client is not initialized for fetchUserSubscription.');
-      return null;
-    }
-    const { data, error: fetchSubError } = await supabase
-      .from('subscriptions')
-      .select('status')
-      .eq('user_id', userId)
-      .limit(1)
-      .single();
-
-    if (fetchSubError) {
-      console.error('Error fetching subscription:', fetchSubError);
-      if (fetchSubError.code === 'PGRST116') {
-        console.log('No subscription record found for user, defaulting status.');
-        return 'free_with_ads';
-      }
-      return null;
-    }
-    return data ? data.status : 'free_with_ads';
-  }, []);
-
-  const linkWalletAndUpsertProfile = useCallback(async (connectedWallet: Wallet, userToLink: User) => {
-    if (!supabase) {
-      console.error("Supabase client tidak terinisialisasi untuk linkWalletAndUpsertProfile.");
-      return;
-    }
-
-    const userFriendlyAddress = connectedWallet.account.address;
-    const chain = connectedWallet.account.chain;
-
-    console.log(`Attempting to upsert profile for Supabase User ID: ${userToLink.id} with Wallet: ${userFriendlyAddress}`);
-
-    try {
-      const { data: profileData, error: upsertError } = await supabase
-        .from('profiles')
-        .upsert({
-          id: userToLink.id,
-          wallet_address: userFriendlyAddress,
-          chain: chain,
-          last_login_at: new Date().toISOString(),
-          email: userToLink.email || undefined,
-        }, {
-          onConflict: 'id',
-        })
-        .select('id, subscription_status')
-        .single();
-
-      if (upsertError) throw upsertError;
-
-      if (profileData) {
-        console.log('Profile upserted/retrieved:', profileData);
-        if (profileData.subscription_status) {
-            setUserSubscriptionStatus(profileData.subscription_status);
-        }
-        const freshSubscriptionStatus = await fetchUserSubscription(profileData.id);
-        setUserSubscriptionStatus(freshSubscriptionStatus);
-        console.log('User subscription status (fresh):', freshSubscriptionStatus);
-      } else {
-        console.warn('No profile data returned from upsert. This could be RLS or if the select returned no rows.');
-        const fallbackSubscriptionStatus = await fetchUserSubscription(userToLink.id);
-        setUserSubscriptionStatus(fallbackSubscriptionStatus);
-      }
-    } catch (e: unknown) {
-      let errorMessageText = 'Detail tidak diketahui.';
-      if (e instanceof Error) {
-        errorMessageText = e.message;
-        // Attempt to get more specific Supabase error details if available
-        if ('details' in e && typeof e.details === 'string') {
-          errorMessageText += ` (Details: ${e.details})`;
-        }
-        if ('hint' in e && typeof e.hint === 'string') {
-          errorMessageText += ` (Hint: ${e.hint})`;
-        }
-        if ('code' in e && typeof e.code === 'string') {
-          errorMessageText += ` (Code: ${e.code})`;
-        }
-      } else if (typeof e === 'object' && e !== null) {
-        // Fallback for non-Error objects, try to stringify
-        if (Object.keys(e).length === 0) {
-          errorMessageText = 'Objek error kosong atau tidak terdefinisi.';
-        } else {
-          try {
-            errorMessageText = JSON.stringify(e);
-          } catch {
-            errorMessageText = `Objek error tidak dapat diserialisasi: ${String(e)}`;
-          }
-        }
-      }
-      console.error('Error during profile upsert:', e);
-      setErrorMessage(`Gagal memperbarui profil: ${errorMessageText}`);
-    }
-  }, [fetchUserSubscription]);
-
-  // Effect 3: Load API keys from localStorage on component mount
-  useEffect(() => {
-    const storedGeminiKey = localStorage.getItem('geminiApiKey');
-    const storedDeepSeekKey = localStorage.getItem('deepSeekApiKey');
-    if (storedGeminiKey) {
-      setGeminiApiKey(storedGeminiKey);
-    }
-    if (storedDeepSeekKey) {
-      setDeepSeekApiKey(storedDeepSeekKey);
-    }
-  }, []);
-
-  // Effect 2: Handle TON Wallet connection and link/create Supabase user
-  useEffect(() => {
-    const processWalletConnection = async () => {
+    const processTonLogin = async () => {
       if (wallet && wallet.account && wallet.account.address) {
         console.log('TON Wallet connected:', wallet.account.address);
         setIsLoading(true);
         setErrorMessage(null);
 
-        let userToLink: User | null = currentSupabaseUser;
+        try {
+          // Call your TON login API endpoint
+          const response = await fetch('/api/auth/ton-login', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              tonAddress: wallet.account.address,
+              // In a real app, you'd include a signature here after a challenge
+              // For now, we're assuming the backend validates the address directly or uses a dummy signature
+              signature: "dummy_signature", 
+              message: "TON Login",
+            }),
+          });
 
-        if (!userToLink) {
-          console.log('No active Supabase session. Attempting anonymous sign-in...');
-          try {
-            const { data: anonSession, error: anonError } = await supabase.auth.signInAnonymously();
-            if (anonError) throw anonError;
+          const data = await response.json();
 
-            if (anonSession?.user) {
-              userToLink = anonSession.user;
-              console.log('Anonymous sign-in successful. New Supabase user ID:', userToLink.id);
-            } else {
-              throw new Error("Anonymous sign-in did not return a user.");
-            }
-          } catch (e) {
-            console.error('Error during anonymous sign-in:', e);
-            const signInErrorMsg = e instanceof Error ? e.message : 'Detail tidak diketahui.';
-            setErrorMessage(`Registrasi/Login otomatis gagal: ${signInErrorMsg}`);
-            setIsLoading(false);
-            return;
+          if (!response.ok) {
+            throw new Error(data.error || 'TON Login failed');
           }
-        }
 
-        if (userToLink) {
-          await linkWalletAndUpsertProfile(wallet, userToLink);
-        } else {
-          console.error("Failed to establish a Supabase user session for wallet linking.");
-          setErrorMessage("Gagal membuat sesi pengguna untuk penautan dompet.");
+          console.log('TON Login API response:', data);
+          setIsLoggedIn(true); // Set login status to true on successful TON login
+          alert('Login TON berhasil!');
+
+        } catch (e: unknown) {
+          let errorMessageText = 'Detail tidak diketahui.';
+          if (e instanceof Error) {
+            errorMessageText = e.message;
+          } else if (typeof e === 'object' && e !== null) {
+            try {
+              errorMessageText = JSON.stringify(e);
+            } catch {
+              errorMessageText = `Objek error tidak dapat diserialisasi: ${String(e)}`;
+            }
+          }
+          console.error('Error during TON login process:', e);
+          setErrorMessage(`Login TON gagal: ${errorMessageText}`);
+          setIsLoggedIn(false); // Ensure login status is false on error
+        } finally {
+          setIsLoading(false);
         }
-        setIsLoading(false);
-      } else if (!wallet) {
+      } else {
         console.log('TON Wallet disconnected or not yet connected.');
-        setUserSubscriptionStatus(null);
+        setIsLoggedIn(false); // Set login status to false if wallet is disconnected
+        setErrorMessage(null);
       }
     };
 
-    if (supabase) {
-        processWalletConnection();
-    }
-  // Added linkWalletAndUpsertProfile to the dependency array
-  }, [wallet, currentSupabaseUser, linkWalletAndUpsertProfile]);
-
+    processTonLogin();
+  }, [wallet]); // Depend on wallet object to re-run when connection status changes
 
   return (
     <div className="p-4 bg-gray-800 rounded-lg shadow-md text-white">
@@ -228,59 +84,14 @@ export default function LoginButton() {
           <p className="font-semibold">Dompet TON Terhubung:</p>
           <p className="mb-1">Alamat: {wallet.account.address}</p>
           <p>Chain: {wallet.account.chain}</p>
-          {currentSupabaseUser && (
-            <p className="mt-1 pt-1 border-t border-gray-600 text-xs">
-              ID Pengguna Supabase: {currentSupabaseUser.id}
-              {currentSupabaseUser.is_anonymous ? ' (Akun Anonim)' : ''}
-            </p>
-          )}
-          {userSubscriptionStatus && !isLoading && (
+          {isLoggedIn && (
             <p className="mt-2 pt-2 border-t border-gray-600">
-              Langganan: <span className="font-bold">{userSubscriptionStatus}</span>
+              Status Login: <span className="font-bold">Berhasil</span>
             </p>
           )}
         </div>
       )}
 
-      {currentSupabaseUser && (
-        <div className="mt-4 p-3 bg-gray-700 rounded text-sm break-all">
-          <p className="font-semibold mb-2">Pengaturan API Key:</p>
-          <div className="mb-3">
-            <label htmlFor="gemini-api-key" className="block text-xs font-medium text-gray-400 mb-1">Gemini API Key:</label>
-            <input
-              id="gemini-api-key"
-              type="password"
-              value={geminiApiKey}
-              onChange={(e) => {
-                setGeminiApiKey(e.target.value);
-                localStorage.setItem('geminiApiKey', e.target.value);
-              }}
-              className="w-full p-2 rounded bg-gray-800 border border-gray-600 text-white text-sm focus:outline-none focus:border-blue-500"
-              placeholder="Masukkan Gemini API Key Anda"
-            />
-          </div>
-          <div>
-            <label htmlFor="deepseek-api-key" className="block text-xs font-medium text-gray-400 mb-1">DeepSeek API Key:</label>
-            <input
-              id="deepseek-api-key"
-              type="password"
-              value={deepSeekApiKey}
-              onChange={(e) => {
-                setDeepSeekApiKey(e.target.value);
-                localStorage.setItem('deepSeekApiKey', e.target.value);
-              }}
-              className="w-full p-2 rounded bg-gray-800 border border-gray-600 text-white text-sm focus:outline-none focus:border-blue-500"
-              placeholder="Masukkan DeepSeek API Key Anda"
-            />
-          </div>
-        </div>
-      )}
-
-      {userSubscriptionStatus === 'free_with_ads' && !isLoading && (
-        <div className="mt-4 p-3 bg-yellow-500 text-black rounded text-center">
-          Anda menggunakan versi gratis dengan iklan.
-        </div>
-      )}
       <style jsx global>{`
         .ton-connect-button button {
           background-color: #007aff;
