@@ -37,7 +37,7 @@ export default function LoginButton() {
             let errorData;
             try {
               errorData = await response.json();
-            } catch (jsonError) {
+            } catch {
               // If response is not JSON, try to read as text
               errorData = await response.text();
             }

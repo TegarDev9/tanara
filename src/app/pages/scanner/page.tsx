@@ -25,11 +25,6 @@ export default function ScannerPage() {
   const [showCameraErrorModal, setShowCameraErrorModal] = useState(false);
 
   // Placeholder for increaseScanQuota since it was removed with Supabase.
-  // This function is no longer needed if ad rewards are disabled.
-  const increaseScanQuota = useCallback((amount: number) => {
-    console.log(`Simulating increase scan quota by ${amount}. (Ad integration removed)`);
-  }, []);
-
   // Removed useEffect for Monetag ad script loading.
 
   // Removed handleShowRewardedAd function.
@@ -274,7 +269,7 @@ export default function ScannerPage() {
         setIsScanningActive(false);
       }
     };
-  }, [isCameraOpen, videoRef, setIsScanningActive]); // Added setIsScanningActive to dependencies
+  }, [isCameraOpen, videoRef, setIsScanningActive, isScanningActive]);
 
   const dataURLtoFile = useCallback((dataurl: string, filename: string): File | null => {
     try {
@@ -632,3 +627,4 @@ export default function ScannerPage() {
     </>
   );
 }
+
