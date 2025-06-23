@@ -34,17 +34,17 @@ export default function LoginButton() {
           });
 
           if (!response.ok) {
+            const responseText = await response.text(); // Read the body stream once as text
             let errorData;
             try {
-              errorData = await response.json();
+              errorData = JSON.parse(responseText); // Attempt to parse as JSON
             } catch {
-              // If response is not JSON, try to read as text
-              errorData = await response.text();
+              errorData = responseText; // If not JSON, use the raw text
             }
             throw new Error(errorData.error || errorData || 'TON Login failed');
           }
 
-          const data = await response.json(); // Only parse as JSON if response.ok is true
+          const data = await response.json(); // Parse as JSON if response.ok is true
           console.log('TON Login API response:', data);
           setIsLoggedIn(true); // Set login status to true on successful TON login
           alert('Login TON berhasil!');
