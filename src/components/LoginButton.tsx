@@ -4,7 +4,7 @@ import {
   useTonConnectUI
 } from '@tonconnect/ui-react';
 import { useEffect, useState } from 'react';
-import { Address, beginCell, toNano } from '@ton/core';
+import { beginCell, toNano } from '@ton/core';
 export default function LoginButton() {
   const wallet = useTonWallet();
   const [tonConnectUI] = useTonConnectUI();
