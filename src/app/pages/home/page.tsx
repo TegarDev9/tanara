@@ -2,6 +2,7 @@
 
 import React, { SVGProps, useState, useEffect } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 
 // --- Definisi Warna Baru (REMOVED - using Tailwind theme) ---
 // const newColors = { ... };
@@ -109,9 +110,9 @@ export default function ModernGreenApp() {
   });
 
   const newMenuItems = [
-    { name: "education", icon: BotIcon, action: () => console.log("Education") },
-    { name: "jurnal", icon: LeafIcon, action: () => console.log("jurnal") },
-    { name: "Airdrop", icon: OriginalGiftIcon, action: () => console.log("Airdrop") },
+    { name: "education", icon: BotIcon, href: "/pages/education" }, // Assuming a future education page
+    { name: "jurnal", icon: LeafIcon, href: "/pages/detail" }, // Link to the new detail page
+    { name: "Airdrop", icon: OriginalGiftIcon, href: "/pages/airdrop" }, // Assuming a future airdrop page
   ];
 
   const [marketTrendData, setMarketTrendData] = useState([
@@ -241,14 +242,14 @@ export default function ModernGreenApp() {
           <section>
             <div className="grid grid-cols-3 gap-2 sm:gap-3 text-center">
               {newMenuItems.map((item) => (
-                <button 
+                <Link 
                   key={item.name}
-                  onClick={item.action}
+                  href={item.href}
                   className="flex flex-col items-center justify-center p-2 sm:p-3 bg-background hover:bg-neutral-800/70 border border-border rounded-lg transition-all duration-200 group"
                 >
                   <item.icon className="w-6 h-6 sm:w-7 sm:h-7 mb-1.5 text-primary group-hover:scale-110 transition-transform" />
                   <span className="text-[11px] sm:text-xs font-medium text-muted-foreground group-hover:text-foreground capitalize">{item.name}</span>
-                </button>
+                </Link>
               ))}
             </div>
           </section>
