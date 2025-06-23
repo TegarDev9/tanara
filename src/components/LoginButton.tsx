@@ -33,12 +33,18 @@ export default function LoginButton() {
             }),
           });
 
-          const data = await response.json();
-
           if (!response.ok) {
-            throw new Error(data.error || 'TON Login failed');
+            let errorData;
+            try {
+              errorData = await response.json();
+            } catch (jsonError) {
+              // If response is not JSON, try to read as text
+              errorData = await response.text();
+            }
+            throw new Error(errorData.error || errorData || 'TON Login failed');
           }
 
+          const data = await response.json(); // Only parse as JSON if response.ok is true
           console.log('TON Login API response:', data);
           setIsLoggedIn(true); // Set login status to true on successful TON login
           alert('Login TON berhasil!');
@@ -47,6 +53,8 @@ export default function LoginButton() {
           let errorMessageText = 'Detail tidak diketahui.';
           if (e instanceof Error) {
             errorMessageText = e.message;
+          } else if (typeof e === 'string') {
+            errorMessageText = e;
           } else if (typeof e === 'object' && e !== null) {
             try {
               errorMessageText = JSON.stringify(e);

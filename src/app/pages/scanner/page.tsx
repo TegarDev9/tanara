@@ -3,33 +3,6 @@
 import React, { useState, useEffect, useCallback, useRef, ChangeEvent } from 'react';
 import { Camera, AlertCircle, CheckCircle2, UploadCloud, XCircle, Loader2, ShieldAlert, VideoOff } from 'lucide-react';
 
-// --- Type Declarations (Monetag Ad) ---
-// Only keep types relevant to Monetag if it's still used.
-declare global {
-  interface Window {
-    znymDisplayRewardedAd?: (options: { zoneid: string | number, callbacks?: MonetagAdCallbacks }) => void;
-  }
-}
-
-interface MonetagAdCallbacks {
-  onShow?: () => void;
-  onClose?: (rewardGranted: boolean) => void;
-  onComplete?: () => void;
-  onError?: (error: Error) => void;
-}
-// --- End Monetag Ad Types ---
-
-// --- Environment Variables ---
-const REWARDED_INTERSTITIAL_ZONE_ID = process.env.NEXT_PUBLIC_REWARDED_INTERSTITIAL_ZONE_ID || "";
-
-interface MonetagAdCallbacks {
-  onShow?: () => void;
-  onClose?: (rewardGranted: boolean) => void;
-  onComplete?: () => void;
-  onError?: (error: Error) => void;
-}
-// --- End Monetag Ad Types ---
-
 export default function ScannerPage() {
   const [feedbackMessage, setFeedbackMessage] = useState('Siap untuk memindai.');
   const [feedbackType, setFeedbackType] = useState<'success' | 'error' | 'info' | 'warning'>('info');
@@ -40,7 +13,7 @@ export default function ScannerPage() {
   const [showScanResultsPopup, setShowScanResultsPopup] = useState(false);
   const [scanResults, setScanResults] = useState('');
 
-  const [isAdLoadingOrShowing, setIsAdLoadingOrShowing] = useState(false);
+  // Removed isAdLoadingOrShowing state as ads are disabled.
 
 
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -52,111 +25,14 @@ export default function ScannerPage() {
   const [showCameraErrorModal, setShowCameraErrorModal] = useState(false);
 
   // Placeholder for increaseScanQuota since it was removed with Supabase.
-  // If ad rewards are still desired, this function needs to be re-implemented
-  // to update a new persistence layer or simply provide a client-side benefit.
+  // This function is no longer needed if ad rewards are disabled.
   const increaseScanQuota = useCallback((amount: number) => {
-    console.log(`Simulating increase scan quota by ${amount}. (Supabase removed)`);
-    // You might add a local state for scan count if needed for UI,
-    // but it won't be persisted without a backend.
+    console.log(`Simulating increase scan quota by ${amount}. (Ad integration removed)`);
   }, []);
 
-  useEffect(() => {
-    if (REWARDED_INTERSTITIAL_ZONE_ID && typeof window !== 'undefined' && !window.znymDisplayRewardedAd) {
-      console.log('Attempting to load Monetag Rewarded Ad script for zone:', REWARDED_INTERSTITIAL_ZONE_ID);
-      const scriptId = 'monetag-rewarded-script';
-      if (document.getElementById(scriptId)) {
-        console.log('Monetag script already exists.');
-        return;
-      }
+  // Removed useEffect for Monetag ad script loading.
 
-      const script = document.createElement('script');
-      script.id = scriptId;
-      script.src = `https://ads.monetag.com/site/script/rewarded_interstitial.js?zoneid=${REWARDED_INTERSTITIAL_ZONE_ID}`;
-      script.async = true;
-      script.onload = () => {
-        console.log('Monetag Rewarded Ad script loaded successfully.');
-        if (typeof window.znymDisplayRewardedAd !== 'function') {
-            console.warn('Monetag SDK loaded, but window.znymDisplayRewardedAd is not a function. Check Monetag integration.');
-        }
-      };
-      script.onerror = () => {
-        console.error('Failed to load Monetag Rewarded Ad script.');
-        setFeedbackMessage('Gagal memuat komponen iklan. Fungsi iklan mungkin tidak tersedia.');
-        setFeedbackType('error');
-      };
-      document.head.appendChild(script);
-
-      return () => {
-        const existingScript = document.getElementById(scriptId);
-        if (existingScript) {
-          console.log('Monetag script cleanup (if any) would happen here.');
-        }
-      };
-    } else if (!REWARDED_INTERSTITIAL_ZONE_ID) {
-        console.warn('NEXT_PUBLIC_REWARDED_INTERSTITIAL_ZONE_ID is not set. Rewarded ads will be disabled.');
-    }
-  }, []);
-
-  const handleShowRewardedAd = useCallback(() => {
-    if (isAdLoadingOrShowing) {
-        console.log("Ad already loading or showing.");
-        return;
-    }
-    if (!REWARDED_INTERSTITIAL_ZONE_ID) {
-        setFeedbackMessage('Fitur iklan tidak tersedia (ID Zona tidak diatur).');
-        setFeedbackType('warning');
-        return;
-    }
-    if (typeof window.znymDisplayRewardedAd !== 'function') {
-        setFeedbackMessage('Komponen iklan belum siap. Coba lagi nanti.');
-        setFeedbackType('error');
-        console.error('Monetag function window.znymDisplayRewardedAd not found.');
-        return;
-    }
-
-    console.log('Attempting to show Monetag Rewarded Ad for zone:', REWARDED_INTERSTITIAL_ZONE_ID);
-    setFeedbackMessage('Memuat iklan...');
-    setFeedbackType('info');
-    setIsAdLoadingOrShowing(true);
-
-    try {
-        window.znymDisplayRewardedAd({
-            zoneid: parseInt(REWARDED_INTERSTITIAL_ZONE_ID, 10),
-            callbacks: {
-                onShow: () => {
-                    console.log('Monetag Rewarded Ad: Shown');
-                    setFeedbackMessage('Iklan sedang ditampilkan...');
-                },
-                onClose: (rewardGranted) => {
-                    console.log('Monetag Rewarded Ad: Closed. Reward granted:', rewardGranted);
-                    setIsAdLoadingOrShowing(false);
-                    if (rewardGranted) {
-                        setFeedbackMessage('Terima kasih telah menonton iklan!');
-                        setFeedbackType('success');
-                        increaseScanQuota(5); // Call the local increaseScanQuota
-                    } else {
-                    setFeedbackMessage('Iklan ditutup sebelum selesai.');
-                    setFeedbackType('info');
-                  }
-              },
-              onComplete: () => {
-                  console.log('Monetag Rewarded Ad: Completed/Reward');
-              },
-              onError: (error: Error) => {
-                  console.error('Monetag Rewarded Ad: Error', error);
-                  setFeedbackMessage(`Gagal memuat iklan: ${error.message}`);
-                  setFeedbackType('error');
-                  setIsAdLoadingOrShowing(false);
-              }
-          }
-      });
-  } catch (e) {
-      console.error("Error calling Monetag ad function:", e);
-      setFeedbackMessage('Gagal menampilkan iklan.');
-      setFeedbackType('error');
-      setIsAdLoadingOrShowing(false);
-  }
-}, [isAdLoadingOrShowing, increaseScanQuota]);
+  // Removed handleShowRewardedAd function.
 
 
   useEffect(() => {
@@ -458,10 +334,6 @@ export default function ScannerPage() {
         setFeedbackMessage('Hasil analisis ditutup.');
         setFeedbackType('info');
     }
-    // If rewarded ads are still desired, call handleShowRewardedAd unconditionally or based on new logic.
-    if (REWARDED_INTERSTITIAL_ZONE_ID) {
-        handleShowRewardedAd();
-    }
   };
 
   const handleActualScanOrOpenCamera = async () => {
@@ -514,7 +386,7 @@ export default function ScannerPage() {
     return 'Buka Kamera';
   };
   
-  const mainButtonDisabled = isScanningActive || isAdLoadingOrShowing;
+  const mainButtonDisabled = isScanningActive;
   
   const parseScanResults = (results: string): Array<{ title: string; content: string; isSubItem?: boolean }> => {
     if (!results || typeof results !== 'string') return [{ title: "Error", content: "Hasil analisis tidak valid atau kosong." }];
@@ -642,10 +514,10 @@ export default function ScannerPage() {
                   <>
                     <video ref={videoRef} className="w-full h-full object-cover" playsInline muted autoPlay />
                     <div className="absolute bottom-3 left-1/2 transform -translate-x-1/2 flex space-x-2 z-20">
-                      <button onClick={takePhoto} disabled={!videoRef.current?.srcObject || isScanningActive || isAdLoadingOrShowing} className="btn-primary btn-sm bg-opacity-80 backdrop-blur-sm hover:bg-opacity-100">
+                      <button onClick={takePhoto} disabled={!videoRef.current?.srcObject || isScanningActive} className="btn-primary btn-sm bg-opacity-80 backdrop-blur-sm hover:bg-opacity-100">
                         <Camera className="w-5 h-5 mr-2" />Ambil Foto
                       </button>
-                      <button onClick={closeCamera} disabled={isScanningActive || isAdLoadingOrShowing} className="btn-icon bg-black/50 hover:bg-black/70 text-white backdrop-blur-sm" aria-label="Tutup Kamera">
+                      <button onClick={closeCamera} disabled={isScanningActive} className="btn-icon bg-black/50 hover:bg-black/70 text-white backdrop-blur-sm" aria-label="Tutup Kamera">
                         <XCircle className="w-5 h-5" />
                       </button>
                     </div>
@@ -659,26 +531,26 @@ export default function ScannerPage() {
                 />
               ) : (
                 <div className="text-center p-4 select-none">
-                  <Camera className={`h-16 w-16 mb-3 transition-colors ${isScanningActive || isAdLoadingOrShowing ? 'text-primary opacity-40' : 'text-muted-foreground opacity-70'}`} />
-                  <p className="text-sm text-muted-foreground">Klik &quot;{mainButtonText()}&quot; di bawah, atau unggah gambar.</p>
+                  <Camera className={`h-16 w-16 mb-3 transition-colors ${isScanningActive ? 'text-primary opacity-40' : 'text-muted-foreground opacity-70'}`} />
+                  <p className="text-sm text-muted-foreground">Klik "{mainButtonText()}" di bawah, atau unggah gambar.</p>
                 </div>
               )}
               {!isCameraOpen && !imagePreviewUrl && !isScanningActive && (
                   <> <div className={`corner top-left ${'border-border/70'}`}></div> <div className={`corner top-right ${'border-border/70'}`}></div> <div className={`corner bottom-left ${'border-border/70'}`}></div> <div className={`corner bottom-right ${'border-border/70'}`}></div> </>
               )}
               {imagePreviewUrl && !isScanningActive && !isCameraOpen && (
-                <button onClick={handleRemoveImage} disabled={isAdLoadingOrShowing} className="absolute top-2 right-2 btn-icon bg-black/60 hover:bg-black/80 text-white z-20" aria-label="Buang gambar"><XCircle className="w-5 h-5" /></button>
+                <button onClick={handleRemoveImage} disabled={false} className="absolute top-2 right-2 btn-icon bg-black/60 hover:bg-black/80 text-white z-20" aria-label="Buang gambar"><XCircle className="w-5 h-5" /></button>
               )}
-              {(isScanningActive || isAdLoadingOrShowing) && (<div className="absolute inset-0 bg-black/30 flex-center z-10 backdrop-blur-sm rounded-xl"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>)}
+              {isScanningActive && (<div className="absolute inset-0 bg-black/30 flex-center z-10 backdrop-blur-sm rounded-xl"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>)}
               <canvas ref={canvasRef} className="hidden" aria-hidden="true"></canvas>
             </div>
           </div>
           <div className="px-5 sm:px-6 pb-3 sm:pb-4 space-y-3 bg-card">
-            <button onClick={handleMainScanClick} disabled={mainButtonDisabled || isCameraOpen || isAdLoadingOrShowing} className={`w-full btn-primary text-base sm:text-lg ${(mainButtonDisabled || isCameraOpen || isAdLoadingOrShowing) ? 'opacity-60 cursor-not-allowed' : ''}`}>
+            <button onClick={handleMainScanClick} disabled={mainButtonDisabled || isCameraOpen} className={`w-full btn-primary text-base sm:text-lg ${(mainButtonDisabled || isCameraOpen) ? 'opacity-60 cursor-not-allowed' : ''}`}>
               {(isScanningActive && !isCameraOpen) && <Loader2 className="mr-2 h-5 w-5 animate-spin" />} {mainButtonText()}
             </button>
             <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" ref={fileInputRef} id="imageUploadInputScannerPage" aria-label="Unggah gambar"/>
-            <button onClick={() => { if (isCameraOpen) closeCamera(); fileInputRef.current?.click(); }} disabled={mainButtonDisabled || isCameraOpen || isAdLoadingOrShowing} className={`w-full btn-neutral text-sm sm:text-base ${(mainButtonDisabled || isCameraOpen || isAdLoadingOrShowing) ? 'opacity-60 cursor-not-allowed' : ''}`}>
+            <button onClick={() => { if (isCameraOpen) closeCamera(); fileInputRef.current?.click(); }} disabled={mainButtonDisabled || isCameraOpen} className={`w-full btn-neutral text-sm sm:text-base ${(mainButtonDisabled || isCameraOpen) ? 'opacity-60 cursor-not-allowed' : ''}`}>
               <UploadCloud className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />{imagePreviewUrl ? 'Ganti Gambar' : (isCameraOpen ? 'Tutup & Unggah Gambar' : 'Unggah Gambar')}
             </button>
           </div>
