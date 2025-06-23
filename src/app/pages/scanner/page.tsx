@@ -521,7 +521,7 @@ export default function ScannerPage() {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={imagePreviewUrl}
-                  alt="Pratinjau Gambar"
+                  alt={"Pratinjau Gambar"}
                   className="absolute inset-0 w-full h-full object-contain rounded-xl"
                 />
               ) : (
@@ -627,4 +627,3 @@ export default function ScannerPage() {
     </>
   );
 }
-
