@@ -1,123 +1,157 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef, ChangeEvent } from 'react';
-import { Camera, AlertCircle, CheckCircle2, Star, UploadCloud, XCircle, Loader2, Sparkles, Crown, ShieldAlert, VideoOff } from 'lucide-react';
-import { createClient, SupabaseClient, User, Subscription as SupabaseSubscription, AuthError, Session } from '@supabase/supabase-js';
-import Image from 'next/image';
+import React, { useState, useEffect, useCallback, useRef, ChangeEvent, useMemo } from 'react';
+import { Camera, AlertCircle, CheckCircle2, UploadCloud, XCircle, Loader2, ShieldAlert, VideoOff } from 'lucide-react';
 
-// --- Environment Variables ---
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const REWARDED_INTERSTITIAL_ZONE_ID = process.env.NEXT_PUBLIC_REWARDED_INTERSTITIAL_ZONE_ID;
+// --- Type Declarations ---
+interface CustomSupabaseClient {
+  auth: {
+    getSession: () => Promise<{ data: { session: CustomSession | null }; error: CustomAuthError | null }>;
+    onAuthStateChange: (callback: (event: string, session: CustomSession | null) => void) => { data: { subscription: CustomSupabaseSubscription }; error: null };
+    signInAnonymously: () => Promise<{ data: { user: CustomUser | null; session: CustomSession | null }; error: CustomAuthError | null }>;
+  };
+  from: (tableName: string) => {
+    select: (selectStatement?: string) => {
+      eq: (column: string, value: unknown) => {
+        single: <T = unknown>() => Promise<{ data: T | null; error: CustomPostgrestError | null }>;
+      };
+    };
+    update: <T = unknown>(values: object) => {
+      eq: (column: string, value: unknown) => Promise<{ data: T[] | null; error: CustomPostgrestError | null }>;
+    };
+  };
+  rpc: <T = unknown>(...args: unknown[]) => Promise<{ data: T | null; error: Error | null }>;
+  storage: {
+    from: (bucketName: string) => {
+      upload: (path: string, file: File) => Promise<{ data: { path: string } | null; error: Error | null }>;
+      download: (path: string) => Promise<{ data: Blob | null; error: Error | null }>;
+    };
+  };
+}
 
-// --- Supabase Client Setup ---
-let supabaseInstance: SupabaseClient;
+interface CustomUser {
+  id: string;
+  aud: string;
+  role: string;
+  email?: string;
+  app_metadata: object;
+  user_metadata: object;
+  created_at: string;
+  is_anonymous: boolean;
+}
 
-interface MockSession extends Partial<Session> {
+interface CustomSession {
   access_token: string;
   token_type: string;
-  user: User;
-  expires_at?: number;
-  refresh_token?: string;
+  user: CustomUser;
+  expires_at: number;
+  refresh_token: string;
 }
 
-if (supabaseUrl && supabaseAnonKey) {
-  supabaseInstance = createClient(supabaseUrl, supabaseAnonKey);
-} else {
-  console.error('Supabase URL or Anon Key is missing. ScannerPage will use a fallback mock.');
-  supabaseInstance = {
-    auth: {
-      getSession: async () => ({ data: { session: null }, error: new Error('Supabase mock: getSession error') as AuthError }),
-      onAuthStateChange: (_callback: (event: string, session: User | null) => void) => {
-        if (process.env.NODE_ENV === 'development') {
-          console.log("Supabase mock: onAuthStateChange invoked, callback argument type:", typeof _callback);
-        }
-        return ({
-          data: { subscription: { unsubscribe: () => {} } as SupabaseSubscription },
-          error: null
-        } as { data: { subscription: SupabaseSubscription }; error: AuthError | null });
-      },
-      signInAnonymously: async () => {
-        console.warn("Supabase mock: signInAnonymously");
-        const mockUser = {
-            id: 'mock-anon-user-id', aud: 'authenticated', role: 'anonymous', email: undefined,
-            app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString(), is_anonymous: true,
-        } as User;
-        const mockSession: MockSession = {
-            access_token: 'mock-anon-token', token_type: 'bearer', user: mockUser,
-            expires_at: Date.now() + 3600000, refresh_token: 'mock-refresh-token'
-        };
-        return { data: { user: mockUser, session: mockSession }, error: null };
-      }
-    },
-    from: (tableName: string) => ({
-      select: (_selectStatement?: string) => { // ESLint: _selectStatement
-        if (process.env.NODE_ENV === 'development') {
-            console.log(`Supabase mock: from(${tableName}).select(${_selectStatement || 'all'})`);
-        }
-        return {
-            eq: (_column: string, _value: unknown) => { // ESLint: _column, _value
-                if (process.env.NODE_ENV === 'development') {
-                    console.log(`Supabase mock: from(${tableName}).select().eq(${_column}, ${_value})`);
-                }
-                return {
-                    single: async () => ({ data: null, error: new Error(`Supabase mock: from(${tableName}).select().eq().single() error`) }),
-                };
-            },
-        };
-      },
-      update: (_values: object) => { // ESLint: _values
-        if (process.env.NODE_ENV === 'development') {
-            console.log(`Supabase mock: from(${tableName}).update() with values:`, _values);
-        }
-        return {
-            eq: (_column: string, _value: unknown) => { // ESLint: _column, _value
-                if (process.env.NODE_ENV === 'development') {
-                    console.log(`Supabase mock: from(${tableName}).update().eq(${_column}, ${_value})`);
-                }
-                return Promise.resolve({ data: null, error: new Error(`Supabase mock: from(${tableName}).update().eq() error`) });
-            },
-        };
-      },
-    }),
-    rpc: async (...args: unknown[]) => { // ESLint: args
-        if (process.env.NODE_ENV === 'development') {
-            console.log("Supabase mock: rpc called with", args);
-        }
-        return ({ data: null, error: new Error('Supabase mock: rpc error') });
-    },
-    storage: {
-        from: (_bucketName: string) => { // ESLint: _bucketName
-            if (process.env.NODE_ENV === 'development') {
-                console.log(`Supabase mock: storage.from(${_bucketName})`);
-            }
-            return {
-                upload: async (_path: string, _file: File) => { // ESLint: _file (path is used)
-                    if (process.env.NODE_ENV === 'development') {
-                        console.log(`Supabase mock: storage.upload(${_path}, ${_file?.name})`);
-                    }
-                    return ({ data: { path: _path }, error: null });
-                },
-                download: async (_path: string) => { // ESLint: _path
-                    if (process.env.NODE_ENV === 'development') {
-                        console.log(`Supabase mock: storage.download(${_path})`);
-                    }
-                    return ({ data: null, error: new Error('Supabase mock: storage.download error') });
-                },
-            };
-        }
-    }
-  } as unknown as SupabaseClient;
+interface CustomSupabaseSubscription {
+  unsubscribe: () => void;
 }
-const supabase = supabaseInstance;
-// --- End Supabase Client Setup ---
 
-// --- Monetag Ad Types (adjust based on actual Monetag SDK if available) ---
+// Changed from an empty interface to a type alias to resolve ESLint error
+type CustomAuthError = Error;
+
+
+interface CustomPostgrestError extends Error {
+  code?: string; // Based on error.code !== 'PGRST116'
+}
+
+type SupabaseClient = CustomSupabaseClient;
+type User = CustomUser;
+type SupabaseSubscription = CustomSupabaseSubscription;
+type AuthError = CustomAuthError;
+type Session = CustomSession;
+type PostgrestError = CustomPostgrestError;
+
 declare global {
   interface Window {
+    supabase: {
+      createClient: (url: string, key: string) => SupabaseClient;
+    };
     znymDisplayRewardedAd?: (options: { zoneid: string | number, callbacks?: MonetagAdCallbacks }) => void;
   }
 }
+
+// --- Environment Variables ---
+// These variables are intended to be populated by the Next.js build process
+// from your .env.local file. They will not work in a simple browser preview
+// unless they are globally defined or replaced.
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+const REWARDED_INTERSTITIAL_ZONE_ID = process.env.NEXT_PUBLIC_REWARDED_INTERSTITIAL_ZONE_ID || "";
+
+
+// --- Supabase Mock Client ---
+// A standalone mock client for when Supabase isn't configured.
+const mockSupabaseClient: SupabaseClient = {
+  auth: {
+    getSession: async () => ({ data: { session: null }, error: new Error('Supabase mock: getSession error') as AuthError }),
+    onAuthStateChange: (callback: (event: string, session: Session | null) => void) => {
+      void callback; // Suppress unused variable warning
+      console.log("Supabase mock: onAuthStateChange invoked.");
+      return { data: { subscription: { unsubscribe: () => {} } as SupabaseSubscription }, error: null };
+    },
+    signInAnonymously: async () => {
+      console.warn("Supabase mock: signInAnonymously");
+      const mockUser: User = {
+          id: 'mock-anon-user-id', aud: 'authenticated', role: 'anonymous', email: undefined,
+          app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString(), is_anonymous: true,
+      };
+      const mockSession: Session = {
+          access_token: 'mock-anon-token', token_type: 'bearer', user: mockUser,
+          expires_at: Date.now() + 3600000, refresh_token: 'mock-refresh-token'
+      };
+      return { data: { user: mockUser, session: mockSession }, error: null };
+    }
+  },
+  from: (tableName: string) => ({
+    select: (selectStatement?: string) => {
+      void selectStatement;
+      return {
+        eq: (column: string, value: unknown) => {
+          void column;
+          void value;
+          return {
+            single: async () => ({ data: null, error: new Error(`Supabase mock: from(${tableName}).select().eq().single() error`) as PostgrestError }),
+          };
+        },
+      };
+    },
+    update: (values: object) => {
+      void values;
+      return {
+        eq: (column: string, value: unknown) => {
+          void column;
+          void value;
+          return Promise.resolve({ data: null, error: new Error(`Supabase mock: from(${tableName}).update().eq() error`) as PostgrestError });
+        },
+      };
+    },
+  }),
+  rpc: async (...args: unknown[]) => {
+    void args;
+    return { data: null, error: new Error('Supabase mock: rpc error') };
+  },
+  storage: {
+    from: (bucketName: string) => {
+      void bucketName;
+      return {
+        upload: async (path: string, file: File) => {
+          void file;
+          return { data: { path: path }, error: null };
+        },
+        download: async (path: string) => {
+          void path;
+          return { data: null, error: new Error('Supabase mock: storage.download error') };
+        },
+      };
+    },
+  }
+};
 
 interface MonetagAdCallbacks {
   onShow?: () => void;
@@ -127,75 +161,13 @@ interface MonetagAdCallbacks {
 }
 // --- End Monetag Ad Types ---
 
-
-const paymentPlans = {
-  trial: { id: 'trial', name: 'Scanner Pro - Trial', midtransPrice: 10000, telegramStars: 70, duration: '1 Minggu', features: ['Akses scanner dasar', 'Scan harian terbatas'], midtransPlanId: 'trial', telegramPlanId: 'scanner_pro_trial_tg' },
-  monthly: { id: 'monthly', name: 'Scanner Pro - Bulanan', midtransPrice: 50000, telegramStars: 350, duration: 'Bulanan', features: ['Akses scanner penuh', 'Scan harian tanpa batas', 'Dukungan prioritas'], midtransPlanId: 'monthly', telegramPlanId: 'scanner_pro_monthly_tg' },
-  yearly: { id: 'yearly', name: 'Scanner Pro - Tahunan', midtransPrice: 500000, telegramStars: 3500, duration: 'Tahunan', features: ['Akses scanner penuh', 'Scan harian tanpa batas', 'Dukungan prioritas', 'Akses awal fitur baru'], midtransPlanId: 'yearly', telegramPlanId: 'scanner_pro_yearly_tg' },
-};
-type PaymentPlanKey = keyof typeof paymentPlans;
-
-interface Profile {
-  id: string; 
-  telegram_id?: number;
-  telegram_username?: string;
-  pro_plan_id_midtrans?: string;
-  pro_expiry_midtrans?: string; 
-  pro_plan_id_telegram?: string;
-  pro_expiry_telegram?: string; 
-  daily_scan_count?: number;
-  last_scan_date?: string;
-}
-
-interface SnapWindow extends Window {
-  snap?: {
-    pay: (token: string, options?: SnapPayOptions) => void;
-  };
-}
-
-interface SnapPayOptions {
-    onSuccess?: (result: SnapSuccessResult) => void;
-    onPending?: (result: SnapPendingResult) => void;
-    onError?: (result: SnapErrorResult) => void;
-    onClose?: () => void;
-}
-
-interface SnapSuccessResult {
-    status_code: string;
-    status_message: string;
-    transaction_id: string;
-    order_id: string;
-    gross_amount: string;
-    payment_type: string;
-    transaction_time: string;
-    transaction_status: string;
-    fraud_status: string;
-}
-interface SnapPendingResult {
-    status_code: string;
-    status_message: string;
-    transaction_id: string;
-    order_id: string;
-    payment_type: string;
-    transaction_time: string;
-    transaction_status: string;
-}
-interface SnapErrorResult {
-    status_code: string;
-    status_message: string[];
-}
-
 export default function ScannerPage() {
   const [feedbackMessage, setFeedbackMessage] = useState('Sedang memuat fitur, mohon tunggu...');
   const [feedbackType, setFeedbackType] = useState<'success' | 'error' | 'info' | 'warning'>('info');
   const [isScanningActive, setIsScanningActive] = useState(false);
 
   const [supabaseUser, setSupabaseUser] = useState<User | null>(null);
-  const [userProfile, setUserProfile] = useState<Profile | null>(null);
-  const [isProMode, setIsProMode] = useState(false);
-  const [proExpiryDate, setProExpiryDate] = useState<string | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
-  const [isLoadingPurchase, setIsLoadingPurchase] = useState<PaymentPlanKey | null>(null);
 
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
@@ -203,8 +175,9 @@ export default function ScannerPage() {
   const [scanResults, setScanResults] = useState('');
 
   const [dailyScanCount, setDailyScanCount] = useState(0);
-  const FREE_SCAN_LIMIT = 10;
+  const FREE_SCAN_LIMIT = 5;
   const [isAdLoadingOrShowing, setIsAdLoadingOrShowing] = useState(false);
+  const [showAdPromptPopup, setShowAdPromptPopup] = useState(false);
 
 
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -213,10 +186,38 @@ export default function ScannerPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevImagePreviewUrlBlobRef = useRef<string | null>(null);
-  const authSubscriptionRef = useRef<SupabaseSubscription | { unsubscribe: () => void } | null>(null);
+  const authSubscriptionRef = useRef<CustomSupabaseSubscription | null>(null);
 
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showCameraErrorModal, setShowCameraErrorModal] = useState(false);
+  const [isSupabaseReady, setIsSupabaseReady] = useState(false);
+
+  // Dynamically load Supabase script
+  useEffect(() => {
+    const scriptId = 'supabase-script';
+    if (document.getElementById(scriptId)) {
+        setIsSupabaseReady(true);
+        return;
+    }
+    const script = document.createElement('script');
+    script.id = scriptId;
+    script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+    script.async = true;
+    script.onload = () => setIsSupabaseReady(true);
+    script.onerror = () => {
+        console.error('Failed to load Supabase script.');
+        setFeedbackMessage('Gagal memuat komponen utama. Fitur mungkin tidak tersedia.');
+        setFeedbackType('error');
+    };
+    document.head.appendChild(script);
+  }, []);
+
+  // Initialize Supabase client once the script is ready
+  const supabase: SupabaseClient = useMemo(() => {
+    if (isSupabaseReady && supabaseUrl && supabaseAnonKey && window.supabase) {
+        return window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+    }
+    return mockSupabaseClient;
+  }, [isSupabaseReady]);
 
   useEffect(() => {
     if (REWARDED_INTERSTITIAL_ZONE_ID && typeof window !== 'undefined' && !window.znymDisplayRewardedAd) {
@@ -229,7 +230,7 @@ export default function ScannerPage() {
 
       const script = document.createElement('script');
       script.id = scriptId;
-      script.src = `https://ads.monetag.com/site/script/rewarded_interstitial.js?zoneid=${REWARDED_INTERSTITIAL_ZONE_ID}`; 
+      script.src = `https://ads.monetag.com/site/script/rewarded_interstitial.js?zoneid=${REWARDED_INTERSTITIAL_ZONE_ID}`;
       script.async = true;
       script.onload = () => {
         console.log('Monetag Rewarded Ad script loaded successfully.');
@@ -255,6 +256,86 @@ export default function ScannerPage() {
     }
   }, []);
 
+  const fetchUserProfile = useCallback(async (userId: string) => {
+    if (!supabaseUrl || !supabaseAnonKey || !isSupabaseReady) {
+        setFeedbackMessage('Konfigurasi Supabase tidak lengkap. Tidak dapat mengambil profil.');
+        setFeedbackType('error');
+        setIsLoadingAuth(false);
+        return;
+    }
+    setIsLoadingAuth(true);
+    try {
+      interface ProfileData {
+        daily_scan_count: number;
+        last_scan_date: string;
+      }
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*, daily_scan_count, last_scan_date')
+        .eq('id', userId)
+        .single<ProfileData>();
+
+      if (error && error.code !== 'PGRST116') { // Ignore "No rows found" error
+        throw error;
+      }
+      if (data) {
+        const today = new Date().toISOString().split('T')[0];
+        let currentScans = data.daily_scan_count || 0;
+        if (data.last_scan_date !== today) {
+          currentScans = 0;
+          supabase.from('profiles').update({ daily_scan_count: 0, last_scan_date: today }).eq('id', userId)
+          .then(({ error: updateError }: { error: PostgrestError | null }) => {
+            if (updateError) console.error('Error resetting daily scan count:', updateError);
+          });
+        }
+        setDailyScanCount(currentScans);
+      } else {
+        setDailyScanCount(0);
+      }
+    } catch (error: unknown) {
+      console.error('Error fetching user profile:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      setFeedbackMessage(`Gagal memuat profil: ${message}`);
+      setFeedbackType('error');
+    } finally {
+      setIsLoadingAuth(false);
+    }
+  }, [supabase, isSupabaseReady]);
+
+  const increaseScanQuota = useCallback(async (amount: number) => {
+    if (!supabaseUser || !supabaseUrl || !supabaseAnonKey) {
+        setFeedbackMessage('Tidak dapat menambah kuota scan: pengguna tidak login atau konfigurasi Supabase tidak lengkap.');
+        setFeedbackType('error');
+        return;
+    }
+
+    setFeedbackMessage(`Menambah kuota scan sebanyak ${amount}...`);
+    setFeedbackType('info');
+
+    try {
+        const newCount = dailyScanCount + amount;
+        const today = new Date().toISOString().split('T')[0];
+
+        const { error } = await supabase
+            .from('profiles')
+            .update({ daily_scan_count: newCount, last_scan_date: today })
+            .eq('id', supabaseUser.id);
+
+        if (error) {
+            throw error;
+        }
+
+        setDailyScanCount(newCount);
+        setFeedbackMessage(`Kuota scan berhasil ditambah! Anda sekarang memiliki ${newCount} scan hari ini.`);
+        setFeedbackType('success');
+    } catch (error: unknown) {
+        console.error('Error increasing scan quota:', error);
+        const message = error instanceof Error ? error.message : String(error);
+        setFeedbackMessage(`Gagal menambah kuota scan: ${message}`);
+        setFeedbackType('error');
+    }
+  }, [dailyScanCount, supabaseUser, supabase]);
+
   const handleShowRewardedAd = useCallback(() => {
     if (isAdLoadingOrShowing) {
         console.log("Ad already loading or showing.");
@@ -279,24 +360,26 @@ export default function ScannerPage() {
 
     try {
         window.znymDisplayRewardedAd({
-            zoneid: parseInt(REWARDED_INTERSTITIAL_ZONE_ID, 10), 
+            zoneid: parseInt(REWARDED_INTERSTITIAL_ZONE_ID, 10),
             callbacks: {
                 onShow: () => {
                     console.log('Monetag Rewarded Ad: Shown');
                     setFeedbackMessage('Iklan sedang ditampilkan...');
                 },
-                onClose: (rewardGranted) => { 
+                onClose: (rewardGranted) => {
                     console.log('Monetag Rewarded Ad: Closed. Reward granted:', rewardGranted);
                     setIsAdLoadingOrShowing(false);
                     if (rewardGranted) {
                         setFeedbackMessage('Terima kasih telah menonton iklan!');
                         setFeedbackType('success');
+                        increaseScanQuota(5); // Add 5 scans after watching ad
                     } else {
                         setFeedbackMessage('Iklan ditutup sebelum selesai.');
                         setFeedbackType('info');
                     }
+                    setShowAdPromptPopup(false); // Close ad prompt after ad interaction
                 },
-                onComplete: () => { 
+                onComplete: () => {
                     console.log('Monetag Rewarded Ad: Completed/Reward');
                 },
                 onError: (error: Error) => {
@@ -304,6 +387,7 @@ export default function ScannerPage() {
                     setFeedbackMessage(`Gagal memuat iklan: ${error.message}`);
                     setFeedbackType('error');
                     setIsAdLoadingOrShowing(false);
+                    setShowAdPromptPopup(false); // Close ad prompt on error
                 }
             }
         });
@@ -312,99 +396,26 @@ export default function ScannerPage() {
         setFeedbackMessage('Gagal menampilkan iklan.');
         setFeedbackType('error');
         setIsAdLoadingOrShowing(false);
+        setShowAdPromptPopup(false); // Close ad prompt on error
     }
-  }, [isAdLoadingOrShowing]);
-
-
-  const isValidDate = (d: unknown): d is Date => d instanceof Date && !isNaN(d.getTime());
-
-  const checkProStatus = useCallback((profile: Profile | null) => {
-    if (!profile) {
-      setIsProMode(false);
-      setProExpiryDate(null);
-      return;
-    }
-    const currentDate = new Date();
-    const validExpiries: Date[] = [];
-    if (profile.pro_expiry_midtrans) {
-      const midtransExpiry = new Date(profile.pro_expiry_midtrans);
-      if (isValidDate(midtransExpiry) && midtransExpiry > currentDate) {
-        validExpiries.push(midtransExpiry);
-      }
-    }
-    if (profile.pro_expiry_telegram) {
-      const telegramExpiry = new Date(profile.pro_expiry_telegram);
-      if (isValidDate(telegramExpiry) && telegramExpiry > currentDate) {
-        validExpiries.push(telegramExpiry);
-      }
-    }
-    if (validExpiries.length > 0) {
-      const maxTimestamp = Math.max(...validExpiries.map(date => date.getTime()));
-      const latest = new Date(maxTimestamp);
-      setIsProMode(true);
-      setProExpiryDate(latest.toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }));
-    } else {
-      setIsProMode(false);
-      setProExpiryDate(null);
-    }
-  }, []);
-
-  const fetchUserProfile = useCallback(async (userId: string) => {
-    if (!supabaseUrl || !supabaseAnonKey) {
-        setFeedbackMessage('Konfigurasi Supabase tidak lengkap. Tidak dapat mengambil profil.');
-        setFeedbackType('error');
-        setIsLoadingAuth(false);
-        return; 
-    }
-    setIsLoadingAuth(true); 
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*, daily_scan_count, last_scan_date')
-        .eq('id', userId)
-        .single();
-
-      if (error && error.code !== 'PGRST116') { 
-        throw error; 
-      }
-      if (data) {
-        const profileData = data as Profile;
-        setUserProfile(profileData);
-        checkProStatus(profileData);
-        const today = new Date().toISOString().split('T')[0];
-        let currentScans = profileData.daily_scan_count || 0;
-        if (profileData.last_scan_date !== today) {
-          currentScans = 0;
-          supabase.from('profiles').update({ daily_scan_count: 0, last_scan_date: today }).eq('id', userId)
-          .then(({ error: updateError }) => {
-            if (updateError) console.error('Error resetting daily scan count:', updateError);
-          });
-        }
-        setDailyScanCount(currentScans);
-      } else { 
-        setUserProfile(null);
-        setIsProMode(false);
-        setProExpiryDate(null);
-        setDailyScanCount(0);
-      }
-    } catch (error: unknown) {
-      console.error('Error fetching user profile:', error);
-      const message = error instanceof Error ? error.message : String(error);
-      setFeedbackMessage(`Gagal memuat profil: ${message}`);
-      setFeedbackType('error');
-      setUserProfile(null); 
-      setIsProMode(false);
-      setProExpiryDate(null);
-    } finally {
-      setIsLoadingAuth(false); 
-    }
-  }, [checkProStatus]); 
+  }, [isAdLoadingOrShowing, increaseScanQuota]);
 
   useEffect(() => {
-    if (!supabaseUrl || !supabaseAnonKey) {
-        setFeedbackMessage('Konfigurasi Supabase tidak lengkap. Fitur autentikasi dinonaktifkan.');
-        setFeedbackType('error');
+    if (!isSupabaseReady || !supabaseUrl || !supabaseAnonKey) {
+        if (!supabaseUrl || !supabaseAnonKey) {
+            setFeedbackMessage('Konfigurasi Supabase tidak lengkap. Fitur autentikasi dinonaktifkan.');
+            setFeedbackType('error');
+        }
         setIsLoadingAuth(false);
+        return;
+    }
+
+    // Ensure we are using the real Supabase client, not the mock
+    // This check is crucial because `supabase` is a useMemo dependency,
+    // and it might initially be the mock client before `isSupabaseReady` becomes true.
+    if (supabase === mockSupabaseClient) {
+        console.log('Supabase client is still mock, waiting for real client.');
+        setIsLoadingAuth(false); // Ensure loading state is handled if waiting
         return;
     }
 
@@ -430,95 +441,42 @@ export default function ScannerPage() {
     };
     getInitialSession();
 
-    const authResponse = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (_event: string, session: Session | null) => {
         setSupabaseUser(session?.user ?? null);
         if (session?.user) {
-          try {
-            await fetchUserProfile(session.user.id);
-          } catch (profileError) {
-            console.error("Error fetching profile on auth state change:", profileError);
-            setFeedbackMessage('Gagal memuat profil setelah perubahan status login.');
-            setFeedbackType('error');
-            setUserProfile(null);
-            setIsProMode(false);
-            setProExpiryDate(null);
-          }
+          await fetchUserProfile(session.user.id);
         } else {
-          setUserProfile(null);
-          setIsProMode(false);
-          setProExpiryDate(null);
           setIsLoadingAuth(false);
         }
       }
-    ) as { data: { subscription: SupabaseSubscription | null }; error: AuthError | null };
-
-    const { data: listenerSubscriptionData, error: authListenerSetupError } = authResponse;
-
-    if (authListenerSetupError) {
-      console.error("Error setting up onAuthStateChange listener:", authListenerSetupError);
-      setFeedbackMessage('Gagal memantau status autentikasi.');
-      setFeedbackType('error');
-      setIsLoadingAuth(false);
-    }
-
-    authSubscriptionRef.current = listenerSubscriptionData?.subscription ?? null;
+    );
+    
+    authSubscriptionRef.current = authListener?.subscription;
 
     return () => {
       authSubscriptionRef.current?.unsubscribe();
     };
-  }, [fetchUserProfile, feedbackMessage]);
+  }, [supabase, isSupabaseReady, fetchUserProfile, feedbackMessage]);
 
-  useEffect(() => {
-    const midtransClientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || "SB-Mid-client-xxxxxxxxxxxxxxx";
-    if (!midtransClientKey || midtransClientKey === 'YOUR_MIDTRANS_CLIENT_KEY_PLACEHOLDER' || midtransClientKey === "SB-Mid-client-xxxxxxxxxxxxxxx") {
-      console.warn('Midtrans client key not set or is placeholder. Midtrans payments will not work.');
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = process.env.NEXT_PUBLIC_MIDTRANS_SNAP_URL || "https://app.sandbox.midtrans.com/snap/snap.js";
-    script.setAttribute('data-client-key', midtransClientKey);
-    script.async = true;
-    document.head.appendChild(script);
-    script.onload = () => {};
-    script.onerror = () => {
-        console.error("Failed to load Midtrans Snap.js.");
-        setFeedbackMessage('Gagal memuat skrip pembayaran. Fitur pembayaran mungkin tidak tersedia.');
-        setFeedbackType('error');
-    };
-    return () => {
-      const existingScript = document.querySelector(`script[src="${script.src}"]`);
-      if (existingScript) {
-          try {
-            document.head.removeChild(existingScript);
-          } catch (e) {
-            console.warn("Could not remove Midtrans script on cleanup:", e);
+    useEffect(() => {
+      if( !supabaseUrl || !supabaseAnonKey) return;
+
+      if (isLoadingAuth) {
+          setFeedbackMessage('Memeriksa status autentikasi');
+          setFeedbackType('info');
+      } else if (supabaseUser) {
+          if (feedbackMessage.includes('memuat fitur') || feedbackMessage.includes('Memeriksa status') || feedbackMessage.startsWith('Sedang memuat')) {
+              setFeedbackMessage('Anda menggunakan mode gratis');
+              setFeedbackType('info');
           }
+      } else if (!supabaseUser && !isLoadingAuth){
+      if (!feedbackMessage.startsWith('Gagal') && !feedbackMessage.startsWith('Silakan login')) {
+        setFeedbackMessage('Silakan login untuk menggunakan scanner.');
+        setFeedbackType('warning');
       }
-    };
-  }, []);
-
-   useEffect(() => {
-     if( !supabaseUrl || !supabaseAnonKey) return;
-
-     if (isLoadingAuth) {
-         setFeedbackMessage('Memeriksa status autentikasi');
-         setFeedbackType('info');
-     } else if (supabaseUser) {
-         if (isProMode) {
-             setFeedbackMessage(`Akses Pro aktif hingga ${proExpiryDate}. Fitur siap digunakan.`);
-             setFeedbackType('success');
-         } else if (feedbackMessage.includes('memuat fitur') || feedbackMessage.includes('Memeriksa status') || feedbackMessage.startsWith('Sedang memuat')) {
-             setFeedbackMessage('Anda menggunakan mode gratis');
-             setFeedbackType('info');
-         }
-     } else if (!supabaseUser && !isLoadingAuth){
-       if (!feedbackMessage.startsWith('Gagal') && !feedbackMessage.startsWith('Silakan login')) {
-         setFeedbackMessage('Silakan login untuk menggunakan scanner atau upgrade ke Pro.');
-         setFeedbackType('warning');
-       }
-     }
-   }, [isProMode, proExpiryDate, supabaseUser, isLoadingAuth, feedbackMessage]); 
+      }
+    }, [supabaseUser, isLoadingAuth, feedbackMessage]);
 
 
   useEffect(() => {
@@ -579,7 +537,7 @@ export default function ScannerPage() {
     setFeedbackType('info');
 
     let base64ImageData: string;
-    const mimeType: string = imageFile.type; // Use const
+    const mimeType: string = imageFile.type;
 
     try {
         base64ImageData = await convertFileToBase64(imageFile);
@@ -638,7 +596,7 @@ export default function ScannerPage() {
         const displayError = errorResult.error || `Analisis AI gagal (Status: ${response.status})`;
         setFeedbackMessage(displayError);
         setFeedbackType('error');
-        setScanResults(`Error: ${displayError}`); 
+        setScanResults(`Error: ${displayError}`);
         setShowScanResultsPopup(true);
         setIsScanningActive(false);
         return;
@@ -651,14 +609,14 @@ export default function ScannerPage() {
         setShowScanResultsPopup(true);
         setFeedbackMessage('Analisis AI berhasil!');
         setFeedbackType('success');
-        if (!isProMode && supabaseUser && supabaseUrl && supabaseAnonKey) {
+        if (supabaseUser && supabaseUrl && supabaseAnonKey) {
           const newCount = dailyScanCount + 1;
           setDailyScanCount(newCount);
           const today = new Date().toISOString().split('T')[0];
           supabase.from('profiles')
             .update({ daily_scan_count: newCount, last_scan_date: today })
             .eq('id', supabaseUser.id)
-            .then(({ error: updateError }) => {
+            .then(({ error: updateError }: { error: PostgrestError | null }) => {
               if (updateError) console.error('Error incrementing scan count:', updateError);
             });
         }
@@ -681,7 +639,7 @@ export default function ScannerPage() {
     } finally {
       setIsScanningActive(false);
     }
-  }, [dailyScanCount, isProMode, supabaseUser, convertFileToBase64]); 
+  }, [dailyScanCount, supabaseUser, convertFileToBase64, supabase]);
 
   const closeCamera = useCallback(() => {
     if (videoRef.current?.srcObject) {
@@ -714,8 +672,8 @@ export default function ScannerPage() {
             videoRef.current?.play().then(() => {
                 setIsCameraOpen(true); setIsScanningActive(false);
                 setFeedbackMessage('Kamera aktif. Arahkan & ambil foto.');
-            }).catch(err => {
-                const errorMessage = err instanceof Error ? err.message : String(err);
+            }).catch((err: Error) => { // Explicitly type err as Error
+                const errorMessage = err.message;
                 const finalMessage = `Gagal memulai stream video: ${errorMessage}`;
                 setCameraError(finalMessage); setFeedbackMessage(finalMessage); setFeedbackType('error');
                 setShowCameraErrorModal(true); stream.getTracks().forEach(track => track.stop());
@@ -727,7 +685,7 @@ export default function ScannerPage() {
             const msg = 'Gagal menginisialisasi video. Ref tidak ditemukan.';
             setFeedbackMessage(msg); setCameraError(msg); setShowCameraErrorModal(true); setFeedbackType('error');
         }
-      } catch (err: unknown) {
+      } catch (err: unknown) { // Keep as unknown for broader error handling
         let message = 'Gagal akses kamera.';
         const errorName = err instanceof Error ? err.name : undefined;
         const errorMessageText = err instanceof Error ? err.message : String(err);
@@ -753,7 +711,7 @@ export default function ScannerPage() {
       const mime = mimeMatch[1]; const bstr = atob(arr[1]); let n = bstr.length;
       const u8arr = new Uint8Array(n); while (n--) { u8arr[n] = bstr.charCodeAt(n); }
       return new File([u8arr], filename, { type: mime });
-    } catch (e: unknown) {
+    } catch (e: unknown) { // Keep as unknown
       const errorMessage = e instanceof Error ? e.message : String(e);
       console.error("Error converting data URL to file:", errorMessage);
       setFeedbackMessage(`Gagal konversi foto: ${errorMessage}`); setFeedbackType('error');
@@ -795,20 +753,20 @@ export default function ScannerPage() {
     setShowScanResultsPopup(false);
     const isErrorResult = scanResults.toLowerCase().startsWith('error:');
     
-    setScanResults(''); 
+    setScanResults('');
     
-    if (!isProMode && supabaseUser && supabaseUrl && supabaseAnonKey && !isErrorResult) {
+    if (supabaseUser && supabaseUrl && supabaseAnonKey && !isErrorResult) {
         if (REWARDED_INTERSTITIAL_ZONE_ID) {
             handleShowRewardedAd();
         } else {
-            setFeedbackMessage('Hasil analisis ditutup.'); 
+            setFeedbackMessage('Hasil analisis ditutup.');
             setFeedbackType('info');
         }
     } else if (isErrorResult) {
         setFeedbackMessage('Analisis gagal. Silakan coba lagi atau unggah gambar lain.');
         setFeedbackType('warning');
     } else {
-        setFeedbackMessage('Hasil analisis ditutup.'); 
+        setFeedbackMessage('Hasil analisis ditutup.');
         setFeedbackType('info');
     }
   };
@@ -825,47 +783,43 @@ export default function ScannerPage() {
 
   const handleMainScanClick = async () => {
     if (isScanningActive || isCameraOpen) return;
-    if (!supabaseUser && supabaseUrl && supabaseAnonKey) { 
+    if (!supabaseUser && supabaseUrl && supabaseAnonKey) {
       setFeedbackMessage('Silakan login untuk menggunakan fitur ini.'); setFeedbackType('warning'); return;
-    } else if (!supabaseUrl || !supabaseAnonKey) { 
+    } else if (!supabaseUrl || !supabaseAnonKey) {
       setFeedbackMessage('Layanan tidak tersedia (konfigurasi backend hilang).'); setFeedbackType('error'); return;
     }
 
-    if (isProMode) {
-      await handleActualScanOrOpenCamera();
+    if (dailyScanCount < FREE_SCAN_LIMIT) {
+        await handleActualScanOrOpenCamera();
     } else {
-      if (dailyScanCount < FREE_SCAN_LIMIT) {
-         setShowUpgradeModal(true); 
-      } else {
-        setFeedbackMessage(`Limit scan harian gratis (${FREE_SCAN_LIMIT}) telah tercapai. Silakan upgrade ke Pro.`);
-        setFeedbackType('warning');
-        setShowUpgradeModal(true); 
-      }
+      setFeedbackMessage(`Limit scan harian gratis (${FREE_SCAN_LIMIT}) telah tercapai.`);
+      setFeedbackType('warning');
+      setShowAdPromptPopup(true); // Show ad prompt when limit is reached
     }
   };
 
   const handleImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
-    if (isCameraOpen) closeCamera(); 
+    if (isCameraOpen) closeCamera();
     const file = event.target.files?.[0];
     if (file) {
       if (!file.type.startsWith('image/')) {
         setFeedbackMessage('Format file tidak didukung. Harap unggah file gambar.'); setFeedbackType('error');
-        if (fileInputRef.current) fileInputRef.current.value = ""; 
+        if (fileInputRef.current) fileInputRef.current.value = "";
         return;
       }
       setUploadedImage(file);
-      if (imagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(imagePreviewUrl); 
+      if (imagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(imagePreviewUrl);
       setImagePreviewUrl(URL.createObjectURL(file));
-      setFeedbackMessage('Gambar diunggah. Siap untuk dipindai.'); setFeedbackType('info'); 
+      setFeedbackMessage('Gambar diunggah. Siap untuk dipindai.'); setFeedbackType('info');
     }
   };
 
   const handleRemoveImage = () => {
-    if (isCameraOpen) closeCamera(); 
-    if (imagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(imagePreviewUrl); 
+    if (isCameraOpen) closeCamera();
+    if (imagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(imagePreviewUrl);
     setUploadedImage(null); setImagePreviewUrl(null);
     setFeedbackMessage('Gambar dibuang.'); setFeedbackType('info');
-    if (fileInputRef.current) fileInputRef.current.value = ""; 
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const getFeedbackStyles = () => {
@@ -873,108 +827,18 @@ export default function ScannerPage() {
       case 'success': return { borderColorClass: 'border-green-500', bgColorClass: 'bg-green-500/10', textColorClass: 'text-green-400', icon: <CheckCircle2 className="h-5 w-5 text-green-500" /> };
       case 'error': return { borderColorClass: 'border-red-500', bgColorClass: 'bg-red-500/10', textColorClass: 'text-red-400', icon: <AlertCircle className="h-5 w-5 text-red-500" /> };
       case 'warning': return { borderColorClass: 'border-yellow-500', bgColorClass: 'bg-yellow-500/10', textColorClass: 'text-yellow-400', icon: <ShieldAlert className="h-5 w-5 text-yellow-500" /> };
-      default: return { borderColorClass: 'border-blue-500', bgColorClass: 'bg-blue-500/10', textColorClass: 'text-blue-400', icon: <AlertCircle className="h-5 w-5 text-blue-500" /> }; 
+      default: return { borderColorClass: 'border-blue-500', bgColorClass: 'bg-blue-500/10', textColorClass: 'text-blue-400', icon: <AlertCircle className="h-5 w-5 text-blue-500" /> };
     }
   };
-  const feedbackStyles = getFeedbackStyles(); 
+  const feedbackStyles = getFeedbackStyles();
 
   const mainButtonText = () => {
-    if (isCameraOpen) return 'Kamera Aktif...'; 
-    if (uploadedImage) return isProMode ? 'Pindai Gambar (Pro)' : 'Pindai Gambar';
-    return isProMode ? 'Buka Kamera (Pro)' : 'Buka Kamera';
+    if (isCameraOpen) return 'Kamera Aktif...';
+    if (uploadedImage) return 'Pindai Gambar';
+    return 'Buka Kamera';
   };
   
-  const mainButtonDisabled = isScanningActive || isAdLoadingOrShowing; 
-
-  const handlePurchase = async (planKey: PaymentPlanKey) => {
-    if (!supabaseUser && supabaseUrl && supabaseAnonKey) { 
-      setFeedbackMessage('Silakan login untuk melakukan pembelian.'); setFeedbackType('warning'); return;
-    } else if (!supabaseUrl || !supabaseAnonKey) { 
-        setFeedbackMessage('Layanan pembayaran tidak tersedia (konfigurasi backend hilang).'); setFeedbackType('error'); return;
-    }
-
-    const snap = (window as SnapWindow).snap;
-    if (!snap) {
-      setFeedbackMessage('Layanan pembayaran belum siap. Mohon tunggu atau coba muat ulang halaman.'); setFeedbackType('error'); return;
-    }
-    const selectedPlan = paymentPlans[planKey];
-    setIsLoadingPurchase(planKey);
-    setFeedbackMessage(`Memproses ${selectedPlan.name}...`); setFeedbackType('info');
-
-    try {
-      console.log("Attempting to call /api/payment/midtrans/charge (currently mocked) for plan:", selectedPlan.midtransPlanId, "User:", supabaseUser?.id);
-      await new Promise(resolve => setTimeout(resolve, 1000)); 
-      const mockMidtransToken = `mock-token-${selectedPlan.midtransPlanId}-${Date.now()}`;
-      const data = { token: mockMidtransToken, order_id: `mock-order-${Date.now()}` }; 
-
-      snap.pay(data.token, {
-        onSuccess: function (result: SnapSuccessResult) {
-          setFeedbackMessage(`Pembayaran ${selectedPlan.name} berhasil! ID Pesanan: ${result.order_id}`); setFeedbackType('success');
-          if (supabaseUser && supabaseUrl && supabaseAnonKey) { 
-            const expiry = new Date();
-            if (selectedPlan.id === 'trial') expiry.setDate(expiry.getDate() + 7);
-            else if (selectedPlan.id === 'monthly') expiry.setMonth(expiry.getMonth() + 1);
-            else if (selectedPlan.id === 'yearly') expiry.setFullYear(expiry.getFullYear() + 1);
-            
-            const updatedProfileData = {
-                id: userProfile?.id || supabaseUser.id, 
-                telegram_id: userProfile?.telegram_id,
-                telegram_username: userProfile?.telegram_username,
-                pro_plan_id_midtrans: selectedPlan.midtransPlanId, 
-                pro_expiry_midtrans: expiry.toISOString(),
-                pro_plan_id_telegram: userProfile?.pro_plan_id_telegram, 
-                pro_expiry_telegram: userProfile?.pro_expiry_telegram,
-                daily_scan_count: userProfile?.daily_scan_count || 0,
-                last_scan_date: userProfile?.last_scan_date || new Date().toISOString().split('T')[0],
-            } as Profile; 
-            
-            setUserProfile(updatedProfileData); 
-            checkProStatus(updatedProfileData); 
-
-             if (supabaseUrl && supabaseAnonKey) { 
-                supabase.from('profiles')
-                    .update({ 
-                        pro_plan_id_midtrans: selectedPlan.midtransPlanId, 
-                        pro_expiry_midtrans: expiry.toISOString() 
-                    })
-                    .eq('id', supabaseUser.id)
-                    .then(({ error: updateError }) => {
-                        if (updateError) {
-                            console.error('Gagal update profil setelah pembayaran (Midtrans):', updateError);
-                            setFeedbackMessage('Pembayaran berhasil, namun gagal update status Pro di server. Mohon kontak dukungan.');
-                                setFeedbackType('warning'); 
-                        } else {
-                            console.log("Profil Supabase diupdate setelah pembayaran Midtrans.");
-                        }
-                    });
-            }
-          }
-          setShowUpgradeModal(false); setIsLoadingPurchase(null);
-        },
-        onPending: function (result: SnapPendingResult) {
-          setFeedbackMessage(`Pembayaran ${selectedPlan.name} tertunda. ID Pesanan: ${result.order_id}`); setFeedbackType('warning');
-          setIsLoadingPurchase(null); 
-        },
-        onError: function (result: SnapErrorResult) {
-          const errorMessages = Array.isArray(result.status_message) ? result.status_message.join(", ") : String(result.status_message);
-          setFeedbackMessage(`Pembayaran ${selectedPlan.name} gagal: ${errorMessages}.`); setFeedbackType('error');
-          setIsLoadingPurchase(null); 
-        },
-        onClose: function () {
-          if (isLoadingPurchase === planKey){ 
-            if (feedbackType !== 'success' && feedbackType !== 'warning' && feedbackType !== 'error') {
-                 setFeedbackMessage('Popup pembayaran ditutup sebelum selesai.'); setFeedbackType('info');
-            }
-            setIsLoadingPurchase(null); 
-          }
-        },
-      });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      setFeedbackMessage(`Gagal memulai pembayaran: ${message}`); setFeedbackType('error');
-      setIsLoadingPurchase(null); 
-    }
-  };
+  const mainButtonDisabled = isScanningActive || isAdLoadingOrShowing;
   
   const parseScanResults = (results: string): Array<{ title: string; content: string; isSubItem?: boolean }> => {
     if (!results || typeof results !== 'string') return [{ title: "Error", content: "Hasil analisis tidak valid atau kosong." }];
@@ -985,7 +849,7 @@ export default function ScannerPage() {
 
     const lines = results.split('\n');
     const parsed: Array<{ title: string; content: string; isSubItem?: boolean }> = [];
-    let currentTitle = "Informasi Umum"; 
+    let currentTitle = "Informasi Umum";
     let currentContent = "";
     const mainTitles = ["Market Structure", "Candlestick Pattern", "Trend Market", "Signal Type", "Bandarmology", "Rekomendasi Trading", "Sentimen Pasar", "Sentimen Media sosial"];
 
@@ -997,16 +861,16 @@ export default function ScannerPage() {
             if (trimmedLine.toLowerCase().startsWith(mTitle.toLowerCase() + ":")) {
                 if (currentContent.trim() || (currentTitle !== "Informasi Umum" && !(parsed.length > 0 && parsed[parsed.length -1].title === currentTitle && !parsed[parsed.length-1].content.trim()))) {
                     if (currentTitle.toLowerCase() === "rekomendasi trading" && !currentContent.trim() && parsed.length > 0 && parsed[parsed.length - 1].title.toLowerCase() !== "rekomendasi trading") {
-                        // Skip
+                        // Skip empty "Rekomendasi Trading" title if it's just a container
                     } else {
-                         parsed.push({ title: currentTitle, content: currentContent.trim() });
+                        parsed.push({ title: currentTitle, content: currentContent.trim() });
                     }
                 }
                 const splitPoint = trimmedLine.indexOf(':');
                 currentTitle = trimmedLine.substring(0, splitPoint).trim();
                 currentContent = trimmedLine.substring(splitPoint + 1).trim();
-                isNewTitle = true; 
-                break; 
+                isNewTitle = true;
+                break;
             }
         }
         if (!isNewTitle) {
@@ -1015,7 +879,7 @@ export default function ScannerPage() {
     }
     if (currentTitle && (currentContent.trim() || (currentTitle !== "Informasi Umum" && !(parsed.length > 0 && parsed[parsed.length -1].title === currentTitle && !parsed[parsed.length-1].content.trim())))) {
         parsed.push({ title: currentTitle, content: currentContent.trim() });
-    } else if (parsed.length === 0 && results.trim()) { 
+    } else if (parsed.length === 0 && results.trim()) {
         return [{ title: "Analisis Detail", content: results.trim() }];
     }
     
@@ -1028,6 +892,15 @@ export default function ScannerPage() {
     return parsed.length > 0 ? parsed : [{ title: "Analisis", content: "Tidak ada detail yang dapat ditampilkan." }];
   };
 
+  if (!isSupabaseReady) {
+      return (
+        <main className="flex min-h-screen flex-col items-center justify-center p-4 font-sans relative bg-background text-foreground">
+             <Loader2 className="h-16 w-16 animate-spin text-primary" />
+             <p className="mt-4 text-muted-foreground">Memuat komponen...</p>
+        </main>
+      );
+  }
+
   return (
     <>
       <main className="flex min-h-screen flex-col items-center justify-center p-4 font-sans relative bg-background text-foreground">
@@ -1035,9 +908,9 @@ export default function ScannerPage() {
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-4 backdrop-blur-md">
             <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg">
               <div className="p-6 text-center border-b border-border">
-                {scanResults.toLowerCase().startsWith('error:') ? 
+                {scanResults.toLowerCase().startsWith('error:') ?
                     <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-3" /> :
-                    <CheckCircle2 className="w-12 h-12 text-primary mx-auto mb-3" /> 
+                    <CheckCircle2 className="w-12 h-12 text-primary mx-auto mb-3" />
                 }
                 <h2 className="text-2xl font-semibold text-foreground">
                     {scanResults.toLowerCase().startsWith('error:') ? "Gagal Menganalisis" : "Hasil Analisis AI Trading"}
@@ -1069,6 +942,25 @@ export default function ScannerPage() {
           </div>
         )}
 
+        {/* Ad Prompt Popup */}
+        {showAdPromptPopup && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[101] p-4 backdrop-blur-md">
+            <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 text-center">
+              <ShieldAlert className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+              <h2 className="text-xl font-semibold text-foreground mb-2">Limit Scan Harian Tercapai!</h2>
+              <p className="text-sm text-muted-foreground mb-6">Anda telah mencapai batas {FREE_SCAN_LIMIT} scan gratis hari ini. Tonton iklan singkat untuk mendapatkan 5 scan tambahan!</p>
+              <div className="space-y-3">
+                <button onClick={handleShowRewardedAd} disabled={isAdLoadingOrShowing} className="w-full btn-primary">
+                  {isAdLoadingOrShowing ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null} Tonton Iklan (Dapatkan 5 Scan)
+                </button>
+                <button onClick={() => setShowAdPromptPopup(false)} disabled={isAdLoadingOrShowing} className="w-full btn-neutral">
+                  Nanti Saja
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Camera Error Modal */}
         {showCameraErrorModal && (
             <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[102] p-4 backdrop-blur-md">
@@ -1078,56 +970,6 @@ export default function ScannerPage() {
                         <h2 className="text-xl font-semibold text-foreground mb-2">Kesalahan Kamera</h2>
                         <p className="text-sm text-muted-foreground mb-6 whitespace-pre-line">{cameraError || "Terjadi kesalahan saat mengakses kamera."}</p>
                         <button onClick={() => setShowCameraErrorModal(false)} className="w-full btn-danger text-sm">Mengerti</button>
-                    </div>
-                </div>
-            </div>
-        )}
-
-        {/* Upgrade Modal */}
-        {showUpgradeModal && supabaseUser && !isProMode && (
-            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[102] p-4 backdrop-blur-md">
-                <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md">
-                    <div className="p-6 text-center border-b border-border">
-                        <Sparkles className="w-10 h-10 text-primary mx-auto mb-3" />
-                        <h2 className="text-2xl font-semibold text-foreground">Upgrade ke Scanner Pro+</h2>
-                        <p className="text-sm text-muted-foreground mt-1">Nikmati fitur penuh, tanpa batas scan harian, dan bebas iklan!</p>
-                    </div>
-                    <div className="p-6 space-y-4 max-h-[50vh] overflow-y-auto custom-scrollbar-dark">
-                        {(Object.keys(paymentPlans) as PaymentPlanKey[]).map((planKey) => {
-                            const plan = paymentPlans[planKey];
-                            const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || "YOUR_BOT_USERNAME";
-                            const telegramDeepLink = `https://t.me/${botUsername}?start=subscribe_${plan.telegramPlanId}`;
-                            const isLoadingThisPlan = isLoadingPurchase === planKey;
-                            return (
-                                <div key={plan.id} className="p-4 border border-border rounded-lg bg-background/40 shadow-sm hover:border-primary/50 transition-colors">
-                                    <h3 className="text-lg font-semibold text-primary">{plan.name}</h3>
-                                    <p className="text-xs text-muted-foreground mb-1">{plan.duration} - {plan.features.join(', ')}</p>
-                                    <div className="flex flex-col sm:flex-row gap-2 mt-3">
-                                        <button onClick={() => handlePurchase(planKey)} disabled={isLoadingThisPlan || (isLoadingPurchase !== null && isLoadingPurchase !== planKey)} className={`btn-primary flex-1 text-sm ${isLoadingThisPlan ? 'opacity-70 cursor-wait' : ''}`}>
-                                            {isLoadingThisPlan ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Crown className="mr-2 h-4 w-4" />}
-                                            Bayar Rp {plan.midtransPrice.toLocaleString('id-ID')} (Web)
-                                        </button>
-                                        <a href={telegramDeepLink} target="_blank" rel="noopener noreferrer" className={`btn-secondary flex-1 text-sm bg-sky-500 hover:bg-sky-600 text-white ${(isLoadingPurchase !== null) ? 'opacity-70 pointer-events-none cursor-not-allowed' : ''}`} onClick={(e) => { if(isLoadingPurchase !== null) e.preventDefault(); }}>
-                                            <Star className="mr-2 h-4 w-4" /> Bayar {plan.telegramStars} Stars (TG)
-                                        </a>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                    <div className="p-6 border-t border-border space-y-3">
-                        {dailyScanCount < FREE_SCAN_LIMIT && (
-                             <button onClick={async () => { setShowUpgradeModal(false); if (dailyScanCount < FREE_SCAN_LIMIT) await handleActualScanOrOpenCamera(); else { setFeedbackMessage(`Limit scan harian (${FREE_SCAN_LIMIT}) tercapai.`); setFeedbackType('warning');}}}
-                                className="w-full btn-neutral text-sm" disabled={isLoadingPurchase !== null || isScanningActive || isAdLoadingOrShowing}>
-                                Lanjutkan Gratis ({FREE_SCAN_LIMIT - dailyScanCount} scan tersisa)
-                            </button>
-                        )}
-                        {dailyScanCount >= FREE_SCAN_LIMIT && (
-                             <p className="text-xs text-yellow-500 text-center">Limit scan harian gratis Anda telah habis.</p>
-                        )}
-                        <button onClick={() => setShowUpgradeModal(false)} className="w-full btn-outline text-sm" disabled={isLoadingPurchase !== null || isAdLoadingOrShowing }>
-                            Tutup
-                        </button>
                     </div>
                 </div>
             </div>
@@ -1158,14 +1000,12 @@ export default function ScannerPage() {
                     </div>
                   </>
               ) : imagePreviewUrl ? (
-                  <Image
-                    src={imagePreviewUrl}
-                    alt="Pratinjau Gambar"
-                    fill
-                    style={{ objectFit: 'contain' }}
-                    className="rounded-xl" 
-                    unoptimized={true} 
-                  />
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={imagePreviewUrl}
+                  alt="Pratinjau Gambar"
+                  className="absolute inset-0 w-full h-full object-contain rounded-xl"
+                />
               ) : (
                 <div className="text-center p-4 select-none">
                   <Camera className={`h-16 w-16 mb-3 transition-colors ${isScanningActive || isAdLoadingOrShowing ? 'text-primary opacity-40' : 'text-muted-foreground opacity-70'}`} />
@@ -1173,7 +1013,7 @@ export default function ScannerPage() {
                 </div>
               )}
               {!isCameraOpen && !imagePreviewUrl && !isScanningActive && (
-                  <> <div className={`corner top-left ${isProMode ? 'border-primary/70' : 'border-border/70'}`}></div> <div className={`corner top-right ${isProMode ? 'border-primary/70' : 'border-border/70'}`}></div> <div className={`corner bottom-left ${isProMode ? 'border-primary/70' : 'border-border/70'}`}></div> <div className={`corner bottom-right ${isProMode ? 'border-primary/70' : 'border-border/70'}`}></div> </>
+                  <> <div className={`corner top-left ${'border-border/70'}`}></div> <div className={`corner top-right ${'border-border/70'}`}></div> <div className={`corner bottom-left ${'border-border/70'}`}></div> <div className={`corner bottom-right ${'border-border/70'}`}></div> </>
               )}
               {imagePreviewUrl && !isScanningActive && !isCameraOpen && (
                 <button onClick={handleRemoveImage} disabled={isAdLoadingOrShowing} className="absolute top-2 right-2 btn-icon bg-black/60 hover:bg-black/80 text-white z-20" aria-label="Buang gambar"><XCircle className="w-5 h-5" /></button>
@@ -1202,11 +1042,9 @@ export default function ScannerPage() {
         <footer className="mt-6 text-center">
           <p className="text-xs text-muted-foreground">
             {(!supabaseUrl || !supabaseAnonKey) ? "Layanan Supabase tidak terkonfigurasi." :
-              (isProMode && proExpiryDate ? `Mode Pro aktif hingga ${proExpiryDate}.` :
-                (supabaseUser ? `Mode Gratis: ${dailyScanCount}/${FREE_SCAN_LIMIT} scan hari ini. ${dailyScanCount >= FREE_SCAN_LIMIT ? 'Limit tercapai.' : ''}` :
+              (supabaseUser ? `Mode Gratis: ${dailyScanCount}/${FREE_SCAN_LIMIT} scan hari ini. ${dailyScanCount >= FREE_SCAN_LIMIT ? 'Limit tercapai.' : ''}` :
                   (isLoadingAuth ? 'Memuat status...' : 'Silakan login untuk memulai.')
-                ))
-            }
+                )}
           </p>
         </footer>
 
@@ -1243,7 +1081,7 @@ export default function ScannerPage() {
           .btn-neutral:hover:not(:disabled) { background-color: hsl(var(--muted-foreground) / 0.3); }
 
           .btn-outline { border: 1px solid var(--border); color: var(--foreground); background-color: transparent; }
-          .btn-outline:hover:not(:disabled) { background-color: hsl(var(--muted-foreground) / 0.1); border-color: hsl(var(--muted-foreground) / 0.3); }
+          .btn-outline:hover:not(:disabled) { background-color: hsl(var(--muted-foreground) / 0.1); border-color: hsl(var(--muted-foreground) / 0.2); }
 
           .btn-danger { background-color: var(--destructive); color: var(--destructive-foreground); border-color: var(--destructive); }
           .btn-danger:hover:not(:disabled) { background-color: hsl(var(--destructive)/0.9); }

@@ -50,7 +50,7 @@ export default function ChatPage() {
   const messagesEndRef = useRef<null | HTMLDivElement>(null);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('gemini-2.0-flash');
+  const [selectedModel, setSelectedModel] = useState('gemini-1.5-flash-latest');
   const availableModels = ['gemini-2.0-flash', 'gemini-pro', 'gemini-ultra'];
   
   const recommendedPrompts = [

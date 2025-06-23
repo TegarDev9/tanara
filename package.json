@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -29,11 +29,10 @@
     "grammy": "^1.36.3",
     "jose": "^6.0.11",
     "lucide-react": "^0.511.0",
-    "midtrans-client": "^1.4.2",
     "monetag-tg-sdk": "^1.0.1",
     "next": "15.3.2",
     "next-intl": "^4.1.0",
-    "node-telegram-bot-api": "^0.66.0",
+    "node-telegram-bot-api": "^0.63.0",
     "pullstate": "^1.25.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

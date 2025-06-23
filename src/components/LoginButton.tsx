@@ -118,10 +118,30 @@ export default function LoginButton() {
         const fallbackSubscriptionStatus = await fetchUserSubscription(userToLink.id);
         setUserSubscriptionStatus(fallbackSubscriptionStatus);
       }
-    } catch (e) {
+    } catch (e: unknown) {
+      let errorMessageText = 'Detail tidak diketahui.';
+      if (e instanceof Error) {
+        errorMessageText = e.message;
+        // Attempt to get more specific Supabase error details if available
+        if ('details' in e && typeof e.details === 'string') {
+          errorMessageText += ` (Details: ${e.details})`;
+        }
+        if ('hint' in e && typeof e.hint === 'string') {
+          errorMessageText += ` (Hint: ${e.hint})`;
+        }
+        if ('code' in e && typeof e.code === 'string') {
+          errorMessageText += ` (Code: ${e.code})`;
+        }
+      } else if (typeof e === 'object' && e !== null) {
+        // Fallback for non-Error objects, try to stringify
+        try {
+          errorMessageText = JSON.stringify(e);
+        } catch { // Renamed to _jsonError to suppress unused variable warning
+          errorMessageText = `Non-serializable error object: ${String(e)}`;
+        }
+      }
       console.error('Error during profile upsert:', e);
-      const upsertErrorMsg = e instanceof Error ? e.message : 'Detail tidak diketahui.';
-      setErrorMessage(`Gagal memperbarui profil: ${upsertErrorMsg}`);
+      setErrorMessage(`Gagal memperbarui profil: ${errorMessageText}`);
     }
   }, [fetchUserSubscription]);
 

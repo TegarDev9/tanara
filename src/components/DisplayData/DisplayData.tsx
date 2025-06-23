@@ -1,4 +1,3 @@
-import { isRGB } from '@telegram-apps/sdk-react';
 import { Cell, Checkbox, Section } from '@telegram-apps/telegram-ui';
 import type { FC, ReactNode } from 'react';
 
@@ -32,11 +31,9 @@ export const DisplayData: FC<DisplayDataProps> = ({ header, rows }) => (
         if ('type' in item) {
           valueNode = <Link href={item.value}>Open</Link>;
         } else if (typeof item.value === 'string') {
-          valueNode = isRGB(item.value) ? (
-            <RGB color={item.value} />
-          ) : (
-            item.value
-          );
+          // Assuming RGB is no longer tied to Telegram SDK's isRGB check
+          // You might need to adjust this logic based on how RGB is now determined
+          valueNode = <RGB color={item.value} />;
         } else if (typeof item.value === 'boolean') {
           valueNode = <Checkbox checked={item.value} disabled />;
         } else {

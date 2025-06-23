@@ -9,5 +9,14 @@ const nextConfig = {
     env: {
       NEXT_PUBLIC_BASE_URL: process.env.NEXT_PUBLIC_BASE_URL,
     },
-  }
-  export default nextConfig;
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        ws: false,
+      };
+    }
+    return config;
+  },
+};
+export default nextConfig;

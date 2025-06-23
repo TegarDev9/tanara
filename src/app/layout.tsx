@@ -24,11 +24,8 @@ interface TelegramWebApp {
   };
   BackButton?: {
     isVisible?: boolean;
-
   }
-  
 }
-
 interface WindowWithTelegram {
   Telegram?: {
     WebApp?: TelegramWebApp;
@@ -80,7 +77,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="description" content="Aplikasi Mini Telegram dengan Next.js" />
         <link rel="icon" href="/image/logo.png" type="image/png" />
       </Head>
-      <body>
+      <body suppressHydrationWarning={true}>
         <TonConnectUIProvider manifestUrl={manifestUrl}>
           <AppRoot>
             {/* Render SplashScreen secara kondisional */}
