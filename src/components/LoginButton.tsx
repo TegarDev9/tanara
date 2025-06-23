@@ -1,7 +1,6 @@
 import {
   useTonWallet,
-  TonConnectButton,
-  useTonConnectUI
+  TonConnectButton
 } from '@tonconnect/ui-react';
 import { useEffect, useState } from 'react';
 

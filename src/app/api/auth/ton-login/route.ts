@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 // Helper function to verify TON signature (simplified for example, might need more robust implementation)
 // In a real application, this would involve cryptographic verification using a TON library.
-async function verifyTonSignature(address: string, message: string, signature: string): Promise<boolean> {
+async function verifyTonSignature(_address: string, _message: string, _signature: string): Promise<boolean> {
   // IMPORTANT: This is a temporary bypass for demonstration purposes.
   // In a real application, you MUST implement proper cryptographic verification
   // of the TON signature using a TON library (e.g., @ton/crypto or similar).
