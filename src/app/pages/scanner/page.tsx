@@ -13,8 +13,6 @@ export default function ScannerPage() {
   const [showScanResultsPopup, setShowScanResultsPopup] = useState(false);
   const [scanResults, setScanResults] = useState('');
 
-  // Removed isAdLoadingOrShowing state as ads are disabled.
-
 
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -23,12 +21,6 @@ export default function ScannerPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevImagePreviewUrlBlobRef = useRef<string | null>(null);
   const [showCameraErrorModal, setShowCameraErrorModal] = useState(false);
-
-  // Placeholder for increaseScanQuota since it was removed with Supabase.
-  // Removed useEffect for Monetag ad script loading.
-
-  // Removed handleShowRewardedAd function.
-
 
   useEffect(() => {
     const previousBlobUrl = prevImagePreviewUrlBlobRef.current;
@@ -122,8 +114,6 @@ export default function ScannerPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // Authorization header removed as Supabase authentication is no longer used.
-          // If TON-based authentication is implemented, a new token should be passed here.
         },
         body: JSON.stringify({
           prompt: tradingPrompt,
@@ -170,7 +160,7 @@ export default function ScannerPage() {
     } finally {
       setIsScanningActive(false);
     }
-  }, [convertFileToBase64]); // Removed dailyScanCount, supabaseUser, supabase
+  }, [convertFileToBase64]);
 
   const closeCamera = useCallback(() => {
     if (videoRef.current?.srcObject) {
@@ -195,8 +185,8 @@ export default function ScannerPage() {
     }
     setImagePreviewUrl(null);
     setUploadedImage(null);
-    setIsCameraOpen(true); // Set to true first to render the video element
-    setIsScanningActive(true); // Indicate that camera is being activated
+    setIsCameraOpen(true); 
+    setIsScanningActive(true);
   }, [isScanningActive, isCameraOpen, imagePreviewUrl]);
 
   useEffect(() => {
@@ -204,7 +194,7 @@ export default function ScannerPage() {
     const videoElement = videoRef.current;
 
     const startCameraStream = async () => {
-      if (!videoElement || !isCameraOpen) return; // Only proceed if video element is rendered and camera is intended to be open
+      if (!videoElement || !isCameraOpen) return;
 
       if (navigator.mediaDevices?.getUserMedia) {
         try {
@@ -264,12 +254,11 @@ export default function ScannerPage() {
         stream.getTracks().forEach(track => track.stop());
         if (videoElement) videoElement.srcObject = null;
       }
-      // Ensure scanning active is reset if camera is closed via cleanup
       if (isScanningActive) {
         setIsScanningActive(false);
       }
     };
-  }, [isCameraOpen, videoRef, setIsScanningActive, isScanningActive]);
+  }, [isCameraOpen, isScanningActive]);
 
   const dataURLtoFile = useCallback((dataurl: string, filename: string): File | null => {
     try {
@@ -278,7 +267,7 @@ export default function ScannerPage() {
       const mime = mimeMatch[1]; const bstr = atob(arr[1]); let n = bstr.length;
       const u8arr = new Uint8Array(n); while (n--) { u8arr[n] = bstr.charCodeAt(n); }
       return new File([u8arr], filename, { type: mime });
-    } catch (e: unknown) { // Keep as unknown
+    } catch (e: unknown) {
       const errorMessage = e instanceof Error ? e.message : String(e);
       console.error("Error converting data URL to file:", errorMessage);
       setFeedbackMessage(`Gagal konversi foto: ${errorMessage}`); setFeedbackType('error');
@@ -333,7 +322,7 @@ export default function ScannerPage() {
 
   const handleActualScanOrOpenCamera = async () => {
     if (uploadedImage) await performGeminiScanViaBackend(uploadedImage);
-    else await openCamera();
+    else openCamera();
   };
 
   const handleMainScanClick = async () => {
@@ -404,7 +393,6 @@ export default function ScannerPage() {
             if (trimmedLine.toLowerCase().startsWith(mTitle.toLowerCase() + ":")) {
                 if (currentContent.trim() || (currentTitle !== "Informasi Umum" && !(parsed.length > 0 && parsed[parsed.length -1].title === currentTitle && !parsed[parsed.length-1].content.trim()))) {
                     if (currentTitle.toLowerCase() === "rekomendasi trading" && !currentContent.trim() && parsed.length > 0 && parsed[parsed.length - 1].title.toLowerCase() !== "rekomendasi trading") {
-                        // Skip empty "Rekomendasi Trading" title if it's just a container
                     } else {
                         parsed.push({ title: currentTitle, content: currentContent.trim() });
                     }
@@ -434,9 +422,6 @@ export default function ScannerPage() {
     
     return parsed.length > 0 ? parsed : [{ title: "Analisis", content: "Tidak ada detail yang dapat ditampilkan." }];
   };
-
-  // Removed isSupabaseReady check as Supabase is no longer used.
-  // If other critical components need loading, a new check should be implemented.
 
   return (
     <>
@@ -527,7 +512,7 @@ export default function ScannerPage() {
               ) : (
                 <div className="text-center p-4 select-none">
                   <Camera className={`h-16 w-16 mb-3 transition-colors ${isScanningActive ? 'text-primary opacity-40' : 'text-muted-foreground opacity-70'}`} />
-                  <p className="text-sm text-muted-foreground">Klik "{mainButtonText()}" di bawah, atau unggah gambar.</p>
+                  <p className="text-sm text-muted-foreground">Klik &quot;{mainButtonText()}&quot; di bawah, atau unggah gambar.</p>
                 </div>
               )}
               {!isCameraOpen && !imagePreviewUrl && !isScanningActive && (
@@ -557,8 +542,6 @@ export default function ScannerPage() {
           )}
         </div>
         
-        {/* Footer message related to Supabase and scan limits removed. */}
-        {/* If a new status message is needed, it should be added here. */}
         <footer className="mt-6 text-center">
           <p className="text-xs text-muted-foreground">
             Pemindai Analisis Trading.
