@@ -1,5 +1,16 @@
 import React from 'react';
-import { PlusCircle, TrendingUp, ArrowRight } from 'lucide-react';
+import { PlusCircle, TrendingUp, ArrowRight, ScanLine } from 'lucide-react';
+
+// Komponen untuk badge Win/Loss agar lebih rapi
+const ResultBadge = ({ isProfit }: { isProfit: boolean }) => (
+  <span className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-full ${
+    isProfit 
+      ? 'bg-white text-black' 
+      : 'bg-transparent border border-gray-700 text-gray-400'
+  }`}>
+    {isProfit ? 'Win' : 'Loss'}
+  </span>
+);
 
 const ModernJournalPage = () => {
   // Data histori trading yang lebih relevan dengan saham/kripto
@@ -12,8 +23,8 @@ const ModernJournalPage = () => {
       entryPrice: 9250,
       exitPrice: 9550,
       lotSize: 10, // dalam lot (1 lot = 100 lembar)
-      trendAnalysis: 'Harga berhasil breakout dari resistance kuat di 9200 dengan volume tinggi. Tren jangka menengah sedang bullish, dikonfirmasi oleh MA50 yang berada di atas MA200.',
-      tradingEvaluation: 'Eksekusi yang baik berdasarkan sinyal breakout yang valid. Target profit tercapai sesuai rencana. Keputusan untuk take profit di 9550 tepat sebelum harga mengalami sedikit pullback.'
+      trendAnalysis: 'Breakout dari resistance 9200 dengan volume tinggi, mengkonfirmasi tren bullish jangka menengah.',
+      tradingEvaluation: 'Eksekusi baik berdasarkan sinyal breakout valid. TP tercapai sesuai rencana sebelum pullback.'
     },
     {
       id: 2,
@@ -23,8 +34,8 @@ const ModernJournalPage = () => {
       entryPrice: 54,
       exitPrice: 51,
       lotSize: 100,
-      trendAnalysis: 'Mencoba menangkap potensi bottom reversal setelah harga turun tajam selama beberapa hari. Indikator RSI menunjukkan kondisi oversold.',
-      tradingEvaluation: 'Keputusan yang terlalu spekulatif dan tidak sabar. Masuk pasar tanpa konfirmasi pembalikan arah yang jelas. Stop-loss dijalankan dengan disiplin, membatasi kerugian. Pelajaran: jangan melawan tren utama tanpa sinyal yang kuat.'
+      trendAnalysis: 'Mencoba menangkap bottom reversal pada kondisi oversold tanpa konfirmasi yang kuat.',
+      tradingEvaluation: 'Keputusan spekulatif. Stop-loss dijalankan dengan disiplin. Pelajaran: jangan melawan tren tanpa sinyal jelas.'
     },
     {
       id: 3,
@@ -34,8 +45,8 @@ const ModernJournalPage = () => {
       entryPrice: 66100,
       exitPrice: 66450,
       lotSize: 0.1, // dalam unit BTC
-      trendAnalysis: 'Scalping jangka pendek di time frame 15 menit. Harga menunjukkan bullish divergence pada indikator RSI saat mendekati level support minor.',
-      tradingEvaluation: 'Trading scalp yang berhasil. Setup jelas dan eksekusi cepat. Profit diambil sesuai target scalping. Risiko terkendali dengan baik.'
+      trendAnalysis: 'Scalping jangka pendek di time frame 15m berdasarkan bullish divergence pada RSI di area support.',
+      tradingEvaluation: 'Trading scalp yang berhasil. Setup jelas dan eksekusi cepat. Risiko terkendali dengan baik.'
     },
     {
       id: 4,
@@ -45,12 +56,12 @@ const ModernJournalPage = () => {
       entryPrice: 2800,
       exitPrice: 2790,
       lotSize: 20,
-      trendAnalysis: 'Harga bergerak dalam fase konsolidasi (sideways). Posisi dibuka dekat area support dengan harapan harga akan memantul kembali ke resistance.',
-      tradingEvaluation: 'Setup trading di area range yang valid, namun pasar tidak memiliki cukup momentum. Memutuskan untuk cut-loss lebih awal saat harga gagal menunjukkan kekuatan untuk memantul. Keputusan yang bijak untuk meminimalkan kerugian.'
+      trendAnalysis: 'Membuka posisi di area support dalam fase konsolidasi (sideways).',
+      tradingEvaluation: 'Setup valid, namun pasar kurang momentum. Cut-loss lebih awal saat harga gagal memantul adalah keputusan bijak.'
     },
   ];
 
-  // Helper untuk memformat angka ke format mata uang Rupiah
+  // Helper untuk memformat angka ke format mata uang
   const formatCurrency = (amount: number, pair: string) => {
     const options: Intl.NumberFormatOptions = {
       style: 'currency',
@@ -69,19 +80,26 @@ const ModernJournalPage = () => {
   return (
     <div className="min-h-screen bg-black text-gray-300 font-sans p-4 sm:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
-        <header className="mb-8">
+        <header className="mb-10">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-                <TrendingUp className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
+                <div className="w-12 h-12 bg-gray-800 border border-gray-700 rounded-lg flex items-center justify-center">
+                    <TrendingUp className="w-6 h-6 text-white" />
+                </div>
                 <div>
-                  <h1 className="text-2xl sm:text-4xl font-bold text-white">Jurnal Trading Saya</h1>
-                  <p className="text-sm sm:text-md text-gray-500 mt-1">Menganalisis setiap langkah untuk keputusan yang lebih baik.</p>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">Jurnal Trading</h1>
+                  <p className="text-sm text-gray-500 mt-1">Analisis untuk keputusan yang lebih baik.</p>
                 </div>
             </div>
-            <button className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white text-black font-semibold rounded-lg hover:bg-gray-200 transition-colors shadow-lg">
-              <PlusCircle size={20} />
-              <span>Entri Baru</span>
-            </button>
+            <div className="flex items-center gap-2">
+                 <button title="Pindai Analisis" className="h-10 w-10 flex items-center justify-center bg-gray-800 text-gray-400 rounded-lg hover:bg-gray-700 hover:text-white transition-colors border border-gray-700">
+                    <ScanLine size={20} />
+                </button>
+                <button className="hidden sm:flex items-center gap-2 h-10 px-4 bg-white text-black font-semibold rounded-lg hover:bg-gray-200 transition-colors">
+                    <PlusCircle size={20} />
+                    <span>Entri Baru</span>
+                </button>
+            </div>
           </div>
         </header>
 
@@ -93,38 +111,35 @@ const ModernJournalPage = () => {
             const isProfit = profitLoss >= 0;
 
             return (
-              <div key={entry.id} className="bg-gray-900 rounded-xl p-4 border border-gray-800 shadow-lg">
-                <div className="flex justify-between items-center mb-4">
-                  <span className="font-bold text-lg text-white">{entry.pair}</span>
-                  <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                    isProfit ? 'bg-white text-black' : 'border border-gray-600 text-gray-400'
-                  }`}>{isProfit ? 'Win' : 'Loss'}</span>
-                </div>
-                <div className="text-sm space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Tanggal:</span>
-                    <span className="font-medium text-gray-200">{entry.date}</span>
+              <div key={entry.id} className="bg-gray-900 rounded-xl p-5 border border-gray-800 shadow-xl">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <span className="font-bold text-lg text-white">{entry.pair}</span>
+                    <p className="text-xs text-gray-500">{entry.date}</p>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-500">Harga:</span>
-                    <div className="flex items-center gap-2 font-medium">
-                      <span>{entry.entryPrice}</span>
-                      <ArrowRight size={16} className="text-gray-600"/>
-                      <span>{entry.exitPrice}</span>
+                  <ResultBadge isProfit={isProfit} />
+                </div>
+                
+                <div className="text-sm font-mono flex items-center justify-center text-center my-4 p-4 bg-black rounded-lg">
+                  <span>{entry.entryPrice}</span>
+                  <ArrowRight size={16} className="mx-4 text-gray-600"/>
+                  <span>{entry.exitPrice}</span>
+                </div>
+
+                <div className="text-center mb-5">
+                    <p className="text-xs text-gray-500 uppercase tracking-widest">Profit/Loss</p>
+                    <p className={`text-2xl font-bold ${isProfit ? 'text-white' : 'text-gray-600'}`}>{formatCurrency(profitLoss, entry.pair)}</p>
+                </div>
+
+                <div className="text-xs text-gray-500 space-y-3">
+                    <div>
+                        <h4 className="font-semibold text-gray-300 mb-1">Analisis Tren</h4>
+                        <p>{entry.trendAnalysis}</p>
                     </div>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Profit/Loss:</span>
-                    <span className={`font-bold ${isProfit ? 'text-white' : 'text-gray-500'}`}>{formatCurrency(profitLoss, entry.pair)}</span>
-                  </div>
-                </div>
-                <div className="mt-4 pt-3 border-t border-gray-800">
-                    <h4 className="font-semibold text-white mb-1">Analisis Tren</h4>
-                    <p className="text-xs text-gray-500">{entry.trendAnalysis}</p>
-                </div>
-                <div className="mt-3">
-                    <h4 className="font-semibold text-white mb-1">Evaluasi Trading</h4>
-                    <p className="text-xs text-gray-500">{entry.tradingEvaluation}</p>
+                    <div>
+                        <h4 className="font-semibold text-gray-300 mb-1">Evaluasi Trading</h4>
+                        <p>{entry.tradingEvaluation}</p>
+                    </div>
                 </div>
               </div>
             );
@@ -135,11 +150,9 @@ const ModernJournalPage = () => {
         <div className="hidden md:block bg-gray-900 shadow-2xl rounded-xl overflow-hidden border border-gray-800">
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-black/50 text-left">
+              <thead className="bg-black/20 text-left">
                 <tr>
-                  <th className="p-4 font-semibold text-gray-500 uppercase tracking-wider">Tanggal</th>
                   <th className="p-4 font-semibold text-gray-500 uppercase tracking-wider">Pair/Saham</th>
-                  <th className="p-4 font-semibold text-gray-500 uppercase tracking-wider">Posisi</th>
                   <th className="p-4 font-semibold text-gray-500 uppercase tracking-wider">Hasil</th>
                   <th className="p-4 font-semibold text-gray-500 uppercase tracking-wider text-right">Profit/Loss</th>
                   <th className="p-4 font-semibold text-gray-500 uppercase tracking-wider">Analisis Tren & Setup</th>
@@ -153,26 +166,17 @@ const ModernJournalPage = () => {
                   const isProfit = profitLoss >= 0;
 
                   return (
-                    <tr key={entry.id} className="hover:bg-gray-800/60 transition-colors">
-                      <td className="p-4 whitespace-nowrap text-gray-400">{entry.date}</td>
-                      <td className="p-4 whitespace-nowrap font-bold text-white">{entry.pair}</td>
+                    <tr key={entry.id} className="hover:bg-gray-800/50 transition-colors">
                       <td className="p-4 whitespace-nowrap">
-                        <span className="px-3 py-1 text-xs font-semibold rounded-full bg-gray-700 text-gray-300">
-                          {entry.position}
-                        </span>
+                        <div className="font-bold text-white">{entry.pair}</div>
+                        <div className="text-gray-500">{entry.date}</div>
                       </td>
-                      <td className="p-4 whitespace-nowrap">
-                         <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                          isProfit ? 'bg-white text-black' : 'border border-gray-600 text-gray-400'
-                        }`}>
-                          {isProfit ? 'Win' : 'Loss'}
-                        </span>
-                      </td>
+                      <td className="p-4 whitespace-nowrap"><ResultBadge isProfit={isProfit} /></td>
                       <td className={`p-4 whitespace-nowrap text-right font-semibold ${isProfit ? 'text-white' : 'text-gray-500'}`}>
                         {formatCurrency(profitLoss, entry.pair)}
                       </td>
-                      <td className="p-4 text-gray-500 max-w-xs">{entry.trendAnalysis}</td>
-                      <td className="p-4 text-gray-500 max-w-xs">{entry.tradingEvaluation}</td>
+                      <td className="p-4 text-gray-500 max-w-sm">{entry.trendAnalysis}</td>
+                      <td className="p-4 text-gray-500 max-w-sm">{entry.tradingEvaluation}</td>
                     </tr>
                   );
                 })}
@@ -181,10 +185,10 @@ const ModernJournalPage = () => {
           </div>
         </div>
 
-         <div className="mt-8 flex justify-center sm:hidden">
+         <div className="mt-6 flex justify-center sm:hidden">
             <button className="flex w-full justify-center items-center gap-2 px-4 py-3 bg-white text-black font-semibold rounded-lg hover:bg-gray-200 transition-colors shadow-lg">
               <PlusCircle size={20} />
-              <span>Tambah Entri Baru</span>
+              <span>Entri Baru</span>
             </button>
           </div>
       </div>
