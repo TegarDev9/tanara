@@ -917,6 +917,26 @@ export default function ChatPage() {
                 .custom-scrollbar-dark::-webkit-scrollbar-thumb { background-color: hsl(var(--muted-foreground)); border-radius: 10px; border: 2px solid hsl(var(--card)/0.5); }
                 .custom-scrollbar-dark::-webkit-scrollbar-thumb:hover { background-color: hsl(var(--primary)/0.8); }
 
+                .custom-scrollbar::-webkit-scrollbar {
+                  width: 6px;
+                  height: 6px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-track {
+                  background: transparent; 
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb {
+                  background: var(--color-border, #333333); /* Fallback to direct value */
+                  border-radius: 10px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                  background: var(--color-muted-foreground, #A0A0A0); /* Fallback to direct value */
+                }
+                /* For Firefox */
+                .custom-scrollbar {
+                  scrollbar-width: thin;
+                  scrollbar-color: var(--color-border, #333333) transparent;
+                }
+
                 .btn { padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 600; transition: all 0.2s ease-in-out; display: inline-flex; align-items: center; justify-content: center; line-height: 1.25; border: 1px solid transparent; }
                 .btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
@@ -958,28 +978,6 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-      {/* Custom scrollbar styles - ensuring they use theme variables if possible */}
-      <style jsx global>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-          height: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent; 
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: var(--color-border, #333333); /* Fallback to direct value */
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: var(--color-muted-foreground, #A0A0A0); /* Fallback to direct value */
-        }
-        /* For Firefox */
-        .custom-scrollbar {
-          scrollbar-width: thin;
-          scrollbar-color: var(--color-border, #333333) transparent;
-        }
-      `}</style>
     </div>
   );
 }
