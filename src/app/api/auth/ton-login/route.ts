@@ -16,7 +16,10 @@ async function verifyTonSignature(address: string, message: string, signature: s
 
 export async function POST(req: NextRequest) {
   try {
-    const { tonAddress, signature, message } = await req.json();
+    // Clone the request to ensure the body stream can be read safely,
+    // especially if other middlewares or parts of the application might also try to read it.
+    const clonedReq = req.clone();
+    const { tonAddress, signature, message } = await clonedReq.json();
 
     if (!tonAddress || !signature || !message) {
       return NextResponse.json({ error: 'Missing tonAddress, signature, or message' }, { status: 400 });
