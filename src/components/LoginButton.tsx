@@ -4,7 +4,6 @@ import {
   useTonConnectUI
 } from '@tonconnect/ui-react';
 import { useEffect, useState } from 'react';
-import { beginCell, toNano } from '@ton/core';
 export default function LoginButton() {
   const wallet = useTonWallet();
   const [tonConnectUI] = useTonConnectUI();
@@ -20,26 +19,7 @@ export default function LoginButton() {
         setErrorMessage(null);
 
         try {
-          const loginMessage = 'Login to your account';
-
-          const transaction = {
-            validUntil: Math.floor(Date.now() / 1000) + 300,
-            messages: [
-              {
-                address: wallet.account.address,
-                amount: toNano('0.000000001').toString(),
-                payload: beginCell().storeUint(0, 32).storeStringTail(loginMessage).endCell().toBoc().toString('base64'),
-              },
-            ],
-          };
-
-          console.log('Attempting to send dummy transaction for signature...');
-          const result = await tonConnectUI.sendTransaction(transaction);
-          console.log('Transaction result (BOC):', result.boc);
-
-          const signature = result.boc;
           const tonAddress = wallet.account.address;
-          const message = loginMessage;
 
           const response = await fetch('/api/auth/ton-login', {
             method: 'POST',
@@ -48,8 +28,6 @@ export default function LoginButton() {
             },
             body: JSON.stringify({
               tonAddress,
-              signature,
-              message,
             }),
           });
 
