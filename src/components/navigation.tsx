@@ -55,27 +55,9 @@ const IconChatBubble = ({ className, ...props }: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-// --- New Scanner Icon ---
-const IconScanner = ({ className, ...props }: SVGProps<SVGSVGElement>) => (
-  <svg 
-    xmlns="http://www.w3.org/2000/svg" 
-    fill="none" 
-    viewBox="0 0 24 24" 
-    stroke="currentColor" 
-    strokeWidth={2} 
-    className={className} 
-    {...props}
-  >
-    {/* Simple viewfinder/scan target icon */}
-    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /> {/* Crosshair style for simplicity */}
-    <path strokeLinecap="round" strokeLinejoin="round" d="M9 3h6M9 21h6M3 9v6M21 9v6" /> {/* Corner brackets */}
-  </svg>
-);
-
 // Updated nav items
 const navItems = [
   { href: "/pages/home", label: "Home", icon: IconSimpleHome },
-  { href: "/pages/scanner", label: "Scanner", icon: IconScanner },
   { href: "/pages/chat", label: "Chat", icon: IconChatBubble },
   { href: "/pages/profile", label: "Settings", icon: IconSimpleSettings },
 ];
