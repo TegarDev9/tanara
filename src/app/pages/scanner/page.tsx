@@ -311,58 +311,94 @@ export default function ScannerPage() {
     setCameraError(null);
   }, []);
 
-  const openCamera = useCallback(async () => {
-    if (!videoRef.current) {
-      const msg = 'Komponen video belum siap. Coba lagi sesaat.';
-      setFeedbackMessage(msg); setCameraError(msg); setShowCameraErrorModal(true); setIsCameraOpen(false); return;
-    }
+  const openCamera = useCallback(() => {
     if (isScanningActive || isCameraOpen) return;
-    setIsScanningActive(true);
-    setFeedbackMessage('Mengakses kamera...'); setFeedbackType('info');
-    setCameraError(null); setShowCameraErrorModal(false);
-    if (imagePreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(imagePreviewUrl);
-    setImagePreviewUrl(null); setUploadedImage(null);
 
-    if (navigator.mediaDevices?.getUserMedia) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.onloadedmetadata = () => {
-            videoRef.current?.play().then(() => {
-                setIsCameraOpen(true); setIsScanningActive(false);
+    setFeedbackMessage('Mengakses kamera...');
+    setFeedbackType('info');
+    setCameraError(null);
+    setShowCameraErrorModal(false);
+
+    if (imagePreviewUrl?.startsWith('blob:')) {
+      URL.revokeObjectURL(imagePreviewUrl);
+    }
+    setImagePreviewUrl(null);
+    setUploadedImage(null);
+    setIsCameraOpen(true); // Set to true first to render the video element
+    setIsScanningActive(true); // Indicate that camera is being activated
+  }, [isScanningActive, isCameraOpen, imagePreviewUrl]);
+
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    const videoElement = videoRef.current;
+
+    const startCameraStream = async () => {
+      if (!videoElement || !isCameraOpen) return; // Only proceed if video element is rendered and camera is intended to be open
+
+      if (navigator.mediaDevices?.getUserMedia) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+          videoElement.srcObject = stream;
+          videoElement.onloadedmetadata = () => {
+            setTimeout(() => {
+              videoElement.play().then(() => {
                 setFeedbackMessage('Kamera aktif. Arahkan & ambil foto.');
-            }).catch((err: Error) => { // Explicitly type err as Error
+                setFeedbackType('info');
+              }).catch((err: Error) => {
                 const errorMessage = err.message;
                 const finalMessage = `Gagal memulai stream video: ${errorMessage}`;
-                setCameraError(finalMessage); setFeedbackMessage(finalMessage); setFeedbackType('error');
-                setShowCameraErrorModal(true); stream.getTracks().forEach(track => track.stop());
-                setIsCameraOpen(false); setIsScanningActive(false);
-            });
+                setCameraError(finalMessage);
+                setFeedbackMessage(finalMessage);
+                setFeedbackType('error');
+                setShowCameraErrorModal(true);
+                stream?.getTracks().forEach(track => track.stop());
+                setIsCameraOpen(false);
+              }).finally(() => {
+                setIsScanningActive(false);
+              });
+            }, 100);
           };
-        } else {
-            stream.getTracks().forEach(track => track.stop()); setIsScanningActive(false);
-            const msg = 'Gagal menginisialisasi video. Ref tidak ditemukan.';
-            setFeedbackMessage(msg); setCameraError(msg); setShowCameraErrorModal(true); setFeedbackType('error');
+        } catch (err: unknown) {
+          let message = 'Gagal akses kamera.';
+          const errorName = err instanceof Error ? err.name : undefined;
+          const errorMessageText = err instanceof Error ? err.message : String(err);
+          if (errorName === "NotAllowedError") message = 'Akses kamera ditolak. Mohon izinkan di pengaturan browser Anda.';
+          else if (errorName === "NotFoundError" || errorName === "DevicesNotFoundError") message = 'Kamera tidak ditemukan. Pastikan kamera terhubung.';
+          else if (errorName === "NotReadableError" || errorName === "TrackStartError") message = 'Kamera sedang digunakan atau bermasalah. Coba tutup aplikasi lain yang mungkin menggunakan kamera.';
+          else message = `Gagal kamera: ${errorName || errorMessageText}`;
+          setCameraError(message);
+          setFeedbackMessage(message);
+          setFeedbackType('error');
+          setShowCameraErrorModal(true);
+          setIsCameraOpen(false);
+          setIsScanningActive(false);
         }
-      } catch (err: unknown) { // Keep as unknown for broader error handling
-        let message = 'Gagal akses kamera.';
-        const errorName = err instanceof Error ? err.name : undefined;
-        const errorMessageText = err instanceof Error ? err.message : String(err);
-        if (errorName === "NotAllowedError") message = 'Akses kamera ditolak. Mohon izinkan di pengaturan browser Anda.';
-        else if (errorName === "NotFoundError" || errorName === "DevicesNotFoundError") message = 'Kamera tidak ditemukan. Pastikan kamera terhubung.';
-        else if (errorName === "NotReadableError" || errorName === "TrackStartError") message = 'Kamera sedang digunakan atau bermasalah. Coba tutup aplikasi lain yang mungkin menggunakan kamera.';
-        else message = `Gagal kamera: ${errorName || errorMessageText}`;
-        setCameraError(message); setFeedbackMessage(message); setFeedbackType('error');
-        setShowCameraErrorModal(true); setIsCameraOpen(false); setIsScanningActive(false);
+      } else {
+        const msg = 'Fitur kamera tidak didukung di browser atau perangkat ini.';
+        setFeedbackMessage(msg);
+        setFeedbackType('error');
+        setCameraError(msg);
+        setShowCameraErrorModal(true);
+        setIsCameraOpen(false);
+        setIsScanningActive(false);
       }
-    } else {
-      const msg = 'Fitur kamera tidak didukung di browser atau perangkat ini.';
-      setFeedbackMessage(msg); setFeedbackType('error');
-      setCameraError(msg); setShowCameraErrorModal(true);
-      setIsCameraOpen(false); setIsScanningActive(false);
+    };
+
+    if (isCameraOpen && videoElement) {
+      startCameraStream();
     }
-  }, [isScanningActive, isCameraOpen, imagePreviewUrl]);
+
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        if (videoElement) videoElement.srcObject = null;
+      }
+      // Ensure scanning active is reset if camera is closed via cleanup
+      if (isScanningActive) {
+        setIsScanningActive(false);
+      }
+    };
+  }, [isCameraOpen, videoRef, setIsScanningActive]); // Added setIsScanningActive to dependencies
 
   const dataURLtoFile = useCallback((dataurl: string, filename: string): File | null => {
     try {

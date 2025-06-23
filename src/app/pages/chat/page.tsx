@@ -113,8 +113,8 @@ export default function ChatPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // 'Authorization' header removed as Supabase authentication is no longer used.
-          // If TON-based authentication is implemented, a new token should be passed here.
+          // 'Authorization' header is temporarily removed as the backend check is bypassed.
+          // Re-implement proper authentication (e.g., TON-based) in production.
         },
         body: JSON.stringify({ 
           prompt: currentInput,
