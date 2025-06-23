@@ -1,6 +1,7 @@
 import {
   useTonWallet,
-  TonConnectButton
+  TonConnectButton,
+  useTonConnectUI
 } from '@tonconnect/ui-react';
 import { useEffect, useState } from 'react';
 
@@ -26,10 +27,8 @@ export default function LoginButton() {
             },
             body: JSON.stringify({
               tonAddress: wallet.account.address,
-              // In a real app, you'd include a signature here after a challenge
-              // For now, we're assuming the backend validates the address directly or uses a dummy signature
-              signature: "dummy_signature", 
-              message: "TON Login",
+              
+              message: 'Login to your account', 
             }),
           });
 

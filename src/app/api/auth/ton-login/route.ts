@@ -3,15 +3,12 @@ import { NextRequest, NextResponse } from 'next/server';
 // Helper function to verify TON signature (simplified for example, might need more robust implementation)
 // In a real application, this would involve cryptographic verification using a TON library.
 async function verifyTonSignature(address: string, message: string, signature: string): Promise<boolean> {
-  try {
-    // Placeholder for actual TON signature verification logic.
-    // For now, we'll just check if the signature is non-empty.
-    // This is NOT secure for production.
-    return signature.length > 0;
-  } catch (e) {
-    console.error('Error verifying TON signature:', e);
-    return false;
-  }
+  // IMPORTANT: This is a temporary bypass for demonstration purposes.
+  // In a real application, you MUST implement proper cryptographic verification
+  // of the TON signature using a TON library (e.g., @ton/crypto or similar).
+  // This placeholder always returns true, making the login insecure.
+  console.warn('WARNING: TON signature verification is bypassed. This is NOT secure for production.');
+  return true;
 }
 
 export async function POST(req: NextRequest) {
@@ -43,8 +40,14 @@ export async function POST(req: NextRequest) {
       tonAddress: tonAddress,
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error in TON login API:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    let errorMessage = 'Internal Server Error';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    } else if (typeof error === 'string') {
+      errorMessage = error;
+    }
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
