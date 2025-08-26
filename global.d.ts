@@ -141,10 +141,35 @@ interface Telegram {
   WebApp?: WebApp; // WebApp bisa jadi undefined, sesuai penggunaan window.Telegram?.WebApp
 }
 
+interface TmaUser {
+  id: number;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
+  // Add other user properties as needed
+}
+
+interface TmaThemeParams {
+  bg_color?: string;
+  // Add other theme properties as needed
+}
+
+interface Tma {
+  getTheme: () => { colorScheme: 'dark' | 'light' };
+  getUser: () => TmaUser;
+  themeParams?: TmaThemeParams;
+}
+
+interface TradingView {
+  widget: new (options: any) => any;
+}
+
 // --- Augmentasi Global Window ---
 declare global {
   interface Window {
     Telegram?: Telegram; // Telegram bisa jadi undefined
+    tma?: Tma;
+    TradingView?: TradingView;
     // TelegaInController?: TelegaInAdsController; // REMOVED
     // TelegaIn?: { // REMOVED
     //   AdsController?: TelegaInAdsController;
@@ -152,5 +177,27 @@ declare global {
   }
 }
 
+// Provide a minimal JSX namespace so TS knows common intrinsic elements when @types/react
+// aren't available in the environment (helps the editor/type-checker in constrained setups).
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      [elemName: string]: any;
+    }
+  }
+}
+
 // Pastikan file ini diinterpretasikan sebagai module TypeScript
 export {};
+
+// If @types/react isn't installed in the environment where the checker runs,
+// provide minimal module declarations so TS doesn't error during quick static checks.
+declare module 'react' {
+  const react: any;
+  export = react;
+}
+
+declare module 'react/jsx-runtime' {
+  const jsx: any;
+  export = jsx;
+}

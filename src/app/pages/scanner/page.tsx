@@ -110,7 +110,7 @@ export default function ScannerPage() {
     try {
       setFeedbackMessage('Mengirim ke AI untuk analisis...');
       
-      const response = await fetch('/api/llm/gemini/analyze-image', {
+      const response = await fetch('/api/llm/openrouter/analyze-image', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -512,7 +512,7 @@ export default function ScannerPage() {
               ) : (
                 <div className="text-center p-4 select-none">
                   <Camera className={`h-16 w-16 mb-3 transition-colors ${isScanningActive ? 'text-primary opacity-40' : 'text-muted-foreground opacity-70'}`} />
-                  <p className="text-sm text-muted-foreground">Klik &quot;{mainButtonText()}&quot; di bawah, atau unggah gambar.</p>
+                  <p className="text-sm text-muted-foreground">Klik &ldquo;{mainButtonText()}&rdquo; di bawah, atau unggah gambar.</p>
                 </div>
               )}
               {!isCameraOpen && !imagePreviewUrl && !isScanningActive && (

@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation'; // Hook untuk mendapatkan path URL saat ini
-import { SVGProps } from 'react';
+
+type IconProps = { className?: string } & Record<string, unknown>;
 
 // Colors are now primarily from Tailwind theme. This object can be removed or simplified.
 // const colors = {
@@ -13,7 +14,7 @@ import { SVGProps } from 'react';
 
 // --- New Simplified SVG Icons ---
 
-const IconSimpleHome = ({ className, ...props }: SVGProps<SVGSVGElement>) => (
+const IconSimpleHome = ({ className, ...props }: IconProps) => (
   <svg 
     xmlns="http://www.w3.org/2000/svg" 
     fill="none" 
@@ -27,7 +28,7 @@ const IconSimpleHome = ({ className, ...props }: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-const IconSimpleSettings = ({ className, ...props }: SVGProps<SVGSVGElement>) => (
+const IconSimpleSettings = ({ className, ...props }: IconProps) => (
   <svg 
     xmlns="http://www.w3.org/2000/svg" 
     fill="none" 
@@ -41,7 +42,7 @@ const IconSimpleSettings = ({ className, ...props }: SVGProps<SVGSVGElement>) =>
     <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
   </svg>
 );
-const IconChatBubble = ({ className, ...props }: SVGProps<SVGSVGElement>) => (
+const IconChatBubble = ({ className, ...props }: IconProps) => (
   <svg 
     xmlns="http://www.w3.org/2000/svg" 
     fill="none" 
@@ -55,9 +56,24 @@ const IconChatBubble = ({ className, ...props }: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+const IconChart = ({ className, ...props }: IconProps) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    stroke="currentColor"
+    strokeWidth={2}
+    className={className}
+    {...props}
+  >
+    <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+  </svg>
+);
+
 // Updated nav items
 const navItems = [
   { href: "/pages/home", label: "Home", icon: IconSimpleHome },
+  { href: "/pages/chart", label: "chart", icon: IconChart },
   { href: "/pages/chat", label: "Chat", icon: IconChatBubble },
   { href: "/pages/profile", label: "Settings", icon: IconSimpleSettings },
 ];

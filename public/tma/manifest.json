@@ -1,0 +1,20 @@
+{
+  "name": "Trading Learning Mini App",
+  "short_name": "TradingMini",
+  "description": "A Telegram Mini App generated from the project to demonstrate TMA integration.",
+  "start_url": "/tma",
+  "display": "standalone",
+  "icons": [
+    {
+      "src": "/file.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ],
+  "version": "1.0.0",
+  "manifest_version": 1,
+  "developer": {
+    "name": "Your Name",
+    "url": "https://example.com"
+  }
+}

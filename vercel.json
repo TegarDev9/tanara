@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "package.json", "use": "@vercel/next" }
+  ],
+  "env": {
+    "DATABASE_URL": "@database_url",
+    "NEXT_PUBLIC_VERCEL": "1"
+  }
+}

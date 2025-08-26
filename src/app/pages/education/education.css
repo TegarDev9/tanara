@@ -1,0 +1,23 @@
+:root{
+  --tg-bg: #ffffff;
+  --tg-accent: #2a9df4;
+  --tg-text: #111827;
+  --tg-sub: #6b7280;
+}
+
+.educ-root{ padding:16px; font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto; color:var(--tg-text)}
+.educ-list{ display:grid; gap:12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.educ-card{ background:#fff; border-radius:10px; padding:12px; box-shadow:0 1px 2px rgba(16,24,40,0.06); display:flex; gap:10px; align-items:center }
+.educ-thumb{ width:64px; height:64px; border-radius:8px; background:#f1f5f9; display:flex; align-items:center; justify-content:center }
+.educ-meta{ flex:1 }
+.educ-title{ font-weight:600 }
+.educ-desc{ font-size:13px; color:var(--tg-sub) }
+.educ-actions{ margin-top:8px; display:flex; gap:8px }
+.educ-btn{ padding:8px 10px; border-radius:8px; border:1px solid #e6eef8; background:#fff }
+.educ-btn.primary{ background:var(--tg-accent); color:#fff; border-color:transparent }
+
+.educ-detail{ max-width:900px; margin:0 auto }
+.educ-videos{ margin-top:12px; display:flex; flex-direction:column; gap:8px }
+.educ-video{ padding:10px; border-radius:8px; background:#fff; box-shadow:0 1px 2px rgba(16,24,40,0.04) }
+.educ-video-title{ font-weight:600 }
+.educ-video-desc{ font-size:13px; color:var(--tg-sub) }

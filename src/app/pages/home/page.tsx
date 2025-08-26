@@ -19,10 +19,6 @@ const InfoIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M12 2a10 10 0 0 0-6.32 17.9A10 10 0 0 0 12 22a10 10 0 0 0 6.32-2.1A10 10 0 0 0 12 2Z"/></svg>
 );
 
-const BotIcon = (props: SVGProps<SVGSVGElement>) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M12 8V4H8V2h8v2h-4v4"/><rect width="16" height="12" x="4" y="10" rx="2"/><path d="M9 18h6"/><path d="M12 14v4"/></svg>
-);
-
 const LeafIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M12 22c4 0 8-3.58 8-8 0-4.42-3.58-8-8-8s-8 3.58-8 8c0 4.42 3.58 8 8 8z"/><path d="M12 15V6"/><path d="M12 9c-1.5 0-3 1.5-3 3s1.5 3 3 3 3-1.5 3-3-1.5-3-3-3z"/></svg>
 );
@@ -42,6 +38,13 @@ const SearchIcon = (props: SVGProps<SVGSVGElement>) => (
 
 const UserCircle2Icon = (props: SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><circle cx="12" cy="10" r="3"/><path d="M12 2a10 10 0 0 0-6.32 17.9A10 10 0 0 0 12 22a10 10 0 0 0 6.32-2.1A10 10 0 0 0 12 2Z"/></svg>
+);
+
+const IconEducation = (props: SVGProps<SVGSVGElement>) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l9-5-9-5-9 5 9 5z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l6.16-3.422A12.083 12.083 0 0118 20.5c0 .827-.67 1.5-1.5 1.5h-9A1.5 1.5 0 016 20.5c0-4.72-.64-8.108-.16-9.922L12 14z" />
+  </svg>
 );
 
 // ChatBubbleOvalLeftEllipsisIcon REMOVED
@@ -110,7 +113,7 @@ export default function ModernGreenApp() {
   });
 
   const newMenuItems = [
-    { name: "education", icon: BotIcon, href: "/pages/education" }, // Assuming a future education page
+    { name: "education", icon: IconEducation, href: "/pages/education" }, // Assuming a future education page
     { name: "jurnal", icon: LeafIcon, href: "/pages/detail" }, // Link to the new detail page
     { name: "Airdrop", icon: OriginalGiftIcon, href: "/pages/airdrop" }, // Assuming a future airdrop page
   ];
@@ -124,7 +127,7 @@ export default function ModernGreenApp() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setMarketTrendData(prevData =>
+      setMarketTrendData((prevData) =>
         prevData.map(item => ({
           ...item,
           value: Math.max(10, Math.min(100, item.value + Math.floor(Math.random() * 21) - 10))
@@ -133,33 +136,6 @@ export default function ModernGreenApp() {
     }, 3000);
     return () => clearInterval(interval);
   }, []);
-
-  // --- analysisFeatures Array (REMOVED) ---
-  // const analysisFeatures = [
-  //   {
-  //     title: "Analisis Sentimen Pasar",
-  //     description: "Dapatkan wawasan dari berita dan sumber finansial untuk memahami sentimen pasar secara *real-time*.",
-  //     icon: ChatBubbleOvalLeftEllipsisIcon,
-  //     buttonText: "Lihat Analisis",
-  //     action: () => console.log("Lihat Analisis Sentimen Pasar"),
-  //   },
-  //   {
-  //     title: "Sentimen Media Sosial",
-  //     description: "Pantau tren dan diskusi di media sosial untuk mengukur sentimen publik terhadap aset tertentu.",
-  //     icon: ShareIcon,
-  //     buttonText: "Jelajahi Sentimen",
-  //     action: () => console.log("Jelajahi Sentimen Media Sosial"),
-  //   },
-  //   {
-  //     title: "Notifikasi Cerdas",
-  //     description: "Atur notifikasi khusus untuk pergerakan harga signifikan atau berita penting aset pilihan Anda.",
-  //     icon: LightBulbIcon,
-  //     buttonText: "Atur Notifikasi",
-  //     action: () => console.log("Atur Notifikasi Cerdas"),
-  //     buttonStyle: "secondary", 
-  //   },
-  // ];
-
 
   return (
     // Use Tailwind classes for background and font. Font is already global via layout.tsx

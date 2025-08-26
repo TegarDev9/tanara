@@ -73,7 +73,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning={true}>
       <Head>
         {/* Menambahkan judul default dan deskripsi untuk praktik terbaik SEO */}
-        <title>Tanara</title>
+    
         <meta name="description" content="Aplikasi Mini Telegram dengan Next.js" />
         <link rel="icon" href="/image/logo.png" type="image/png" />
       </Head>

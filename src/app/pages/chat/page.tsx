@@ -1,26 +1,28 @@
 'use client';
 
-import React, { useState, FormEvent, useRef, useEffect, useCallback, ChangeEvent, SVGProps } from 'react';
-import { Camera, AlertCircle, CheckCircle2, UploadCloud, XCircle, Loader2, ShieldAlert, VideoOff, ScanIcon } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback, FormEvent, ChangeEvent, SVGProps } from 'react';
+import Image from 'next/image';
+import { Camera, AlertCircle, CheckCircle2, UploadCloud, XCircle, Loader2, ShieldAlert, VideoOff, ScanIcon, BatteryFull, BatteryMedium, BatteryLow, BatteryWarning } from 'lucide-react';
 
-// Define the color palette (REMOVED - Using Tailwind theme)
-// const colors = { ... };
-
-interface Message {
+interface ChatMessage {
   id: string;
   sender: 'user' | 'bot';
   text: string;
   isLoading?: boolean;
 }
 
-// Send Icon Component (no changes needed if using currentColor by default)
+interface StockData {
+  symbol: string;
+  price: number;
+  timestamp: number;
+}
+
 const SendIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" {...props}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
   </svg>
 );
 
-// Loading Spinner Icon Component (animate-spin is Tailwind)
 const LoadingSpinnerIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" {...props}>
     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -28,7 +30,6 @@ const LoadingSpinnerIcon = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-// Settings Icon Component (no changes needed if using currentColor by default)
 const SettingsIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.646.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.24-.438.613-.43.992a6.759 6.759 0 0 1 0 1.257c-.008.379.137.75.43.99l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.333.184-.582.496-.646.87l-.212 1.28c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.646-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.759 6.759 0 0 1 0-1.257c.008-.379-.137-.75-.43-.99l-1.004-.828a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.49l1.217.456c.354.133.75.072 1.075-.124.072-.044.146-.087.22-.128.332-.184.582-.496.646-.87l.212-1.281Z" />
@@ -36,20 +37,29 @@ const SettingsIcon = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-// Close Icon Component (no changes needed if using currentColor by default)
 const CloseIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
   </svg>
 );
 
+const BatteryIcon = ({ usageCount }: { usageCount: number }) => {
+  const percentage = (usageCount / 5) * 100;
+  if (percentage > 75) return <BatteryFull className="w-6 h-6 text-green-500" />;
+  if (percentage > 50) return <BatteryMedium className="w-6 h-6 text-yellow-500" />;
+  if (percentage > 25) return <BatteryLow className="w-6 h-6 text-orange-500" />;
+  return <BatteryWarning className="w-6 h-6 text-red-500" />;
+};
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<null | HTMLDivElement>(null);
-  const [isScanPopupOpen, setIsScanPopupOpen] = useState(false); // New state for scan popup
+  const [isScanPopupOpen, setIsScanPopupOpen] = useState(false);
+  const [usageCount, setUsageCount] = useState(5);
+  const [stockData, setStockData] = useState<StockData | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   // Scanner Page states
   const [feedbackMessage, setFeedbackMessage] = useState('Siap untuk memindai.');
@@ -69,8 +79,8 @@ export default function ChatPage() {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState('gemini-1.5-flash-latest');
-  const availableModels = ['gemini-2.0-flash', 'gemini-pro', 'gemini-ultra']; // Keep models if still relevant
-  
+  const availableModels = ['gemini-2.0-flash', 'gemini-pro', 'gemini-ultra'];
+
   const recommendedPrompts = [
     "Buatkan saya cerita pendek tentang petualangan di luar angkasa.",
     "Jelaskan konsep relativitas umum dengan bahasa yang sederhana.",
@@ -78,23 +88,52 @@ export default function ChatPage() {
     "Tuliskan puisi tentang keindahan alam Indonesia.",
     "Apa saja tips untuk belajar bahasa baru secara efektif?"
   ];
-  
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }
-  
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [chatMessages]);
 
-  // Load API keys from localStorage on component mount
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    // Establish WebSocket connection to the standalone server on port 3001
+    const ws = new WebSocket(`ws://${window.location.hostname}:3001`);
 
-  // Scanner Page useEffects
+    ws.onopen = () => {
+      console.log('WebSocket connected');
+    };
+
+    ws.onmessage = event => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'chat') {
+        const newChatMessage: ChatMessage = {
+          id: Date.now().toString(),
+          sender: 'bot', // Assuming all broadcasted messages are from 'bot' or other users
+          text: data.message,
+        };
+        setChatMessages(prev => [...prev, newChatMessage]);
+      } else if (data.type === 'stock_update') {
+        setStockData(data);
+      }
+    };
+
+    ws.onclose = () => {
+      console.log('WebSocket disconnected');
+    };
+
+    ws.onerror = error => {
+      console.error('WebSocket error:', error);
+    };
+
+    wsRef.current = ws;
+
+    return () => {
+      ws.close();
+    };
+  }, []);
+
   useEffect(() => {
     const previousBlobUrl = prevImagePreviewUrlBlobRef.current;
     if (imagePreviewUrl && imagePreviewUrl.startsWith('blob:')) {
@@ -125,7 +164,7 @@ export default function ChatPage() {
     const videoElement = videoRef.current;
 
     const startCameraStream = async () => {
-      if (!videoElement || !isCameraOpen) return; // Only proceed if video element is rendered and camera is intended to be open
+      if (!videoElement || !isCameraOpen) return;
 
       if (navigator.mediaDevices?.getUserMedia) {
         try {
@@ -185,43 +224,42 @@ export default function ChatPage() {
         stream.getTracks().forEach(track => track.stop());
         if (videoElement) videoElement.srcObject = null;
       }
-      // Ensure scanning active is reset if camera is closed via cleanup
       if (isScanningActive) {
         setIsScanningActive(false);
       }
     };
   }, [isCameraOpen, videoRef, setIsScanningActive, isScanningActive]);
 
-  // Supabase session and API key management removed.
-  // If user-specific API keys are needed, implement a new storage/retrieval mechanism.
-  // For now, the backend will use a global API key.
-
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || usageCount <= 0) return;
 
-    const userMessage: Message = {
+    const userMessage: ChatMessage = {
       id: Date.now().toString(),
       sender: 'user',
       text: input.trim(),
     };
-    setMessages((prev) => [...prev, userMessage]);
+    setChatMessages((prev: ChatMessage[]) => [...prev, userMessage]);
+
+    // Send chat message via WebSocket
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(input.trim());
+    }
+
     const currentInput = input.trim();
     setInput('');
     setIsLoading(true);
 
     const loadingBotMessageId = (Date.now() + 1).toString();
-    const loadingBotMessage: Message = {
+    const loadingBotMessage: ChatMessage = {
       id: loadingBotMessageId,
       sender: 'bot',
-      text: '...', // Placeholder for loading
+      text: '...',
       isLoading: true,
     };
-    setMessages((prev) => [...prev, loadingBotMessage]);
+    setChatMessages((prev: ChatMessage[]) => [...prev, loadingBotMessage]);
 
-    // Ensure this URL matches your API route structure in Next.js
-    // For App Router, this would map to app/api/llm/gemini/generate_conten_chat/route.ts
-    const apiUrl = '/api/llm/gemini/generate_conten_chat'; // CORRECTED
+    const apiUrl = '/api/llm/openrouter/generate_conten_chat';
     console.log(`Sending prompt to ${apiUrl} with model: ${selectedModel}`);
 
     try {
@@ -229,17 +267,13 @@ export default function ChatPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // 'Authorization' header is temporarily removed as the backend check is bypassed.
-          // Re-implement proper authentication (e.g., TON-based) in production.
         },
         body: JSON.stringify({ 
           prompt: currentInput,
-          // model: selectedModel // Uncomment if your backend uses this
         }),
       });
 
       if (!response.ok) {
-        // Attempt to parse error response from backend if available
         let errorDataMessage = `Error from bot server (${response.status} ${response.statusText})`;
         try {
           const errorData = await response.json();
@@ -258,25 +292,25 @@ export default function ChatPage() {
       const data = await response.json();
       const botMessageText = data.text || 'Maaf, saya tidak dapat memproses itu saat ini.';
       
-      const botMessage: Message = {
-        id: Date.now().toString(), // Use a new ID for the actual bot message
+      const botMessage: ChatMessage = {
+        id: Date.now().toString(),
         sender: 'bot',
         text: botMessageText,
         isLoading: false,
       };
-      // Replace the loading message with the actual bot message
-      setMessages((prev) => prev.map(msg => msg.id === loadingBotMessageId ? botMessage : msg));
+      setChatMessages((prev: ChatMessage[]) => prev.map(msg => msg.id === loadingBotMessageId ? botMessage : msg));
+      setUsageCount(prev => prev - 1);
 
     } catch (error) {
       console.error('Chat submission error:', error);
       const errorMessageText = error instanceof Error ? error.message : 'Terjadi kesalahan yang tidak diketahui.';
-      const errorBotMessage: Message = {
-        id: loadingBotMessageId, // Reuse ID to replace the loading message
+      const errorBotMessage: ChatMessage = {
+        id: loadingBotMessageId,
         sender: 'bot',
         text: `Error: ${errorMessageText}`,
         isLoading: false,
       };
-      setMessages((prev) => prev.map(msg => msg.id === loadingBotMessageId ? errorBotMessage : msg));
+      setChatMessages((prev: ChatMessage[]) => prev.map(msg => msg.id === loadingBotMessageId ? errorBotMessage : msg));
     } finally {
       setIsLoading(false);
     }
@@ -290,17 +324,15 @@ export default function ChatPage() {
     setIsScanPopupOpen(!isScanPopupOpen);
   };
 
-  const handleModelChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleModelChange = (event: ChangeEvent<HTMLSelectElement>) => {
     setSelectedModel(event.target.value);
   };
 
   const handleRecommendedPromptClick = (prompt: string) => {
     setInput(prompt);
-    setIsSettingsOpen(false); // Optionally close the settings popup after selecting a prompt
+    setIsSettingsOpen(false);
   };
 
-
-  // Scanner Page Callbacks
   const convertFileToBase64 = useCallback((file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -323,8 +355,8 @@ export default function ChatPage() {
   }, []);
 
   const performGeminiScanViaBackend = useCallback(async (imageFile: File | null) => {
-    if (!imageFile) {
-      setFeedbackMessage('Tidak ada gambar untuk analisis.');
+    if (!imageFile || usageCount <= 0) {
+      setFeedbackMessage('Tidak ada gambar untuk analisis atau batas penggunaan habis.');
       setFeedbackType('error');
       setIsScanningActive(false);
       return;
@@ -364,12 +396,10 @@ export default function ChatPage() {
     try {
       setFeedbackMessage('Mengirim ke AI untuk analisis...');
       
-      const response = await fetch('/api/llm/gemini/analyze-image', {
+      const response = await fetch('/api/llm/openrouter/analyze-image', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // Authorization header removed as Supabase authentication is no longer used.
-          // If TON-based authentication is implemented, a new token should be passed here.
         },
         body: JSON.stringify({
           prompt: tradingPrompt,
@@ -397,6 +427,7 @@ export default function ChatPage() {
         setShowScanResultsPopup(true);
         setFeedbackMessage('Analisis AI berhasil!');
         setFeedbackType('success');
+        setUsageCount(prev => prev - 1);
       } else {
         console.error('Backend response missing text field:', result);
         const errorMessage = result.error || 'Format respons dari AI tidak valid.';
@@ -416,7 +447,7 @@ export default function ChatPage() {
     } finally {
       setIsScanningActive(false);
     }
-  }, [convertFileToBase64]); // Removed dailyScanCount, supabaseUser, supabase
+  }, [convertFileToBase64, usageCount]);
 
   const closeCamera = useCallback(() => {
     if (videoRef.current?.srcObject) {
@@ -441,8 +472,8 @@ export default function ChatPage() {
     }
     setImagePreviewUrl(null);
     setUploadedImage(null);
-    setIsCameraOpen(true); // Set to true first to render the video element
-    setIsScanningActive(true); // Indicate that camera is being activated
+    setIsCameraOpen(true);
+    setIsScanningActive(true);
   }, [isScanningActive, isCameraOpen, imagePreviewUrl]);
 
   const dataURLtoFile = useCallback((dataurl: string, filename: string): File | null => {
@@ -452,7 +483,7 @@ export default function ChatPage() {
       const mime = mimeMatch[1]; const bstr = atob(arr[1]); let n = bstr.length;
       const u8arr = new Uint8Array(n); while (n--) { u8arr[n] = bstr.charCodeAt(n); }
       return new File([u8arr], filename, { type: mime });
-    } catch (e: unknown) { // Keep as unknown
+    } catch (e: unknown) {
       const errorMessage = e instanceof Error ? e.message : String(e);
       console.error("Error converting data URL to file:", errorMessage);
       setFeedbackMessage(`Gagal konversi foto: ${errorMessage}`); setFeedbackType('error');
@@ -555,7 +586,7 @@ export default function ChatPage() {
     return 'Buka Kamera';
   };
   
-  const mainButtonDisabled = isScanningActive;
+  const mainButtonDisabled = isScanningActive || usageCount <= 0;
   
   const parseScanResults = (results: string): Array<{ title: string; content: string; isSubItem?: boolean }> => {
     if (!results || typeof results !== 'string') return [{ title: "Error", content: "Hasil analisis tidak valid atau kosong." }];
@@ -578,7 +609,6 @@ export default function ChatPage() {
             if (trimmedLine.toLowerCase().startsWith(mTitle.toLowerCase() + ":")) {
                 if (currentContent.trim() || (currentTitle !== "Informasi Umum" && !(parsed.length > 0 && parsed[parsed.length -1].title === currentTitle && !parsed[parsed.length-1].content.trim()))) {
                     if (currentTitle.toLowerCase() === "rekomendasi trading" && !currentContent.trim() && parsed.length > 0 && parsed[parsed.length - 1].title.toLowerCase() !== "rekomendasi trading") {
-                        // Skip empty "Rekomendasi Trading" title if it's just a container
                     } else {
                         parsed.push({ title: currentTitle, content: currentContent.trim() });
                     }
@@ -609,14 +639,24 @@ export default function ChatPage() {
     return parsed.length > 0 ? parsed : [{ title: "Analisis", content: "Tidak ada detail yang dapat ditampilkan." }];
   };
 
-
   return (
     <div className="flex flex-col h-screen max-w-2xl mx-auto font-sans relative bg-background text-foreground">
-      {/* Header */}
       <header
         className="p-4 text-lg font-semibold text-center sticky top-0 z-20 shadow-lg flex items-center justify-between bg-neutral-900 text-primary border-b border-border"
       >
-        <span className="flex-grow text-center">Hands chat</span> {/* Centered Title */}
+        <div className="flex items-center space-x-2">
+          <BatteryIcon usageCount={usageCount} />
+          <span>{usageCount} / 5</span>
+        </div>
+        <span className="flex-grow text-center">Hands chat</span>
+        {stockData && (
+          <div className="flex items-center space-x-2 text-sm">
+            <span className="font-semibold">{stockData.symbol}:</span>
+            <span className="font-bold text-foreground">
+              ${stockData.price.toFixed(2)}
+            </span>
+          </div>
+        )}
         <button
           onClick={toggleSettingsPopup}
           className="p-2 rounded-full hover:bg-neutral-700/60 focus:outline-none focus:ring-2 focus:ring-primary/70 focus:ring-offset-2 focus:ring-offset-neutral-900 transition-colors duration-150 text-primary"
@@ -626,7 +666,6 @@ export default function ChatPage() {
         </button>
       </header>
 
-      {/* Settings Popup */}
       {isSettingsOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-30 p-4">
           <div
@@ -643,7 +682,6 @@ export default function ChatPage() {
               </button>
             </div>
 
-            {/* Model Selection */}
             <div className="mb-6">
               <label htmlFor="gemini-model" className="block text-sm font-medium mb-2 text-foreground">
                 Pilih Model Gemini:
@@ -662,10 +700,6 @@ export default function ChatPage() {
               </select>
             </div>
 
-            {/* API Key inputs removed as Supabase user metadata is no longer used for storage. */}
-            {/* If API keys are still needed, they should be managed via a new system. */}
-
-            {/* Recommended Prompts */}
             <div className="mb-2">
               <h3 className="text-lg font-medium mb-3 text-foreground">Rekomendasi Prompt:</h3>
               <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
@@ -684,9 +718,8 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Messages Area */}
       <div className="flex-grow overflow-y-auto p-6 space-y-4 custom-scrollbar">
-        {messages.map((msg) => (
+        {chatMessages.map((msg: ChatMessage) => (
           <div
             key={msg.id}
             className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -696,14 +729,9 @@ export default function ChatPage() {
               ${ msg.sender === 'user' ? 'bg-primary text-primary-foreground rounded-br-none' : 'bg-card text-foreground rounded-bl-none'} 
               ${msg.isLoading ? 'animate-pulse opacity-80' : ''}`}
             >
-              {/* Render newlines correctly */}
               {msg.text.split('\n').map((line, index, arr) => (
                 <span key={index} className="block break-words whitespace-pre-wrap">
                   {line}
-                  {/* Add <br/> only if it's not the last line, to prevent extra space.
-                      However, CSS white-space: pre-wrap on the parent might be a cleaner way
-                      if you want to preserve all whitespace and newlines from the string directly.
-                  */}
                   {index < arr.length - 1 && <br/>}
                 </span>
               ))}
@@ -713,7 +741,6 @@ export default function ChatPage() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Form */}
       <form
         onSubmit={handleSubmit}
         className="p-3 sm:p-4 border-t border-border sticky bottom-0 z-20 bg-background shadow-[0_-2px_10px_rgba(0,0,0,0.1)]"
@@ -723,15 +750,15 @@ export default function ChatPage() {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ketik pesan Anda..."
+            placeholder={usageCount <= 0 ? "Batas penggunaan harian tercapai" : "Ketik pesan Anda..."}
             className={`flex-grow p-3 border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all duration-200 ease-in-out text-foreground placeholder:text-muted-foreground bg-card disabled:opacity-70`}
-            disabled={isLoading}
+            disabled={isLoading || usageCount <= 0}
           />
           <button
-            type="button" // Changed to type="button" to prevent form submission
-            onClick={toggleScanPopup} // Added onClick handler
+            type="button"
+            onClick={toggleScanPopup}
             className={`p-3 rounded-lg transition-all duration-200 ease-in-out shadow-md hover:shadow-lg active:shadow-sm bg-primary text-primary-foreground hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background disabled:opacity-60 disabled:cursor-not-allowed`}
-            disabled={isLoading}
+            disabled={isLoading || usageCount <= 0}
           >
             {isLoading ? (
               <LoadingSpinnerIcon className="w-6 h-6" />
@@ -742,7 +769,7 @@ export default function ChatPage() {
           <button
             type="submit"
             className={`p-3 rounded-lg transition-all duration-200 ease-in-out shadow-md hover:shadow-lg active:shadow-sm bg-primary text-primary-foreground hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background disabled:opacity-60 disabled:cursor-not-allowed`}
-            disabled={isLoading}
+            disabled={isLoading || usageCount <= 0}
           >
             {isLoading ? (
               <LoadingSpinnerIcon className="w-6 h-6" />
@@ -753,7 +780,6 @@ export default function ChatPage() {
         </div>
       </form>
 
-      {/* Scan Popup */}
       {isScanPopupOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-30 p-4">
           <div
@@ -769,8 +795,7 @@ export default function ChatPage() {
                 <CloseIcon className="w-6 h-6"/>
               </button>
             </div>
-            {/* Start of Scanner Page content */}
-            <main className="flex min-h-screen flex-col items-center justify-center p-4 font-sans relative bg-background text-foreground">
+            <div className="flex flex-col items-center p-4 font-sans relative bg-background text-foreground max-h-[80vh] overflow-y-auto custom-scrollbar-dark">
               {showScanResultsPopup && (
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-4 backdrop-blur-md">
                   <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg">
@@ -809,7 +834,6 @@ export default function ChatPage() {
                 </div>
               )}
 
-              {/* Camera Error Modal */}
               {showCameraErrorModal && (
                   <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[102] p-4 backdrop-blur-md">
                       <div className="bg-card border border-red-500 rounded-xl shadow-2xl w-full max-w-sm p-6">
@@ -823,7 +847,6 @@ export default function ChatPage() {
                   </div>
               )}
 
-              {/* Main UI Card */}
               <div className="bg-card border border-border w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
                 <div className="bg-neutral-800/50 p-5 sm:p-6 text-center border-b border-border">
                   <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Pemindai Analisis Trading</h1>
@@ -848,11 +871,12 @@ export default function ChatPage() {
                           </div>
                         </>
                     ) : imagePreviewUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <Image
                         src={imagePreviewUrl}
                         alt={"Pratinjau Gambar"}
-                        className="absolute inset-0 w-full h-full object-contain rounded-xl"
+                        width={320}
+                        height={240}
+                        className="rounded-xl object-contain"
                       />
                     ) : (
                       <div className="text-center p-4 select-none">
@@ -887,16 +911,7 @@ export default function ChatPage() {
                 )}
               </div>
               
-              {/* Footer message related to Supabase and scan limits removed. */}
-              {/* If a new status message is needed, it should be added here. */}
-              <footer className="mt-6 text-center">
-                <p className="text-xs text-muted-foreground">
-                  Pemindai Analisis Trading.
-                </p>
-              </footer>
-
-
-              <style jsx global>{`
+<style>{`
                 :root {
                   --card: hsl(222.2, 84%, 4.9%);
                   --muted-foreground: hsl(215, 20.2%, 65.1%);
@@ -925,16 +940,15 @@ export default function ChatPage() {
                   background: transparent; 
                 }
                 .custom-scrollbar::-webkit-scrollbar-thumb {
-                  background: var(--color-border, #333333); /* Fallback to direct value */
+                  background: var(--border, #333333);
                   border-radius: 10px;
                 }
                 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-                  background: var(--color-muted-foreground, #A0A0A0); /* Fallback to direct value */
+                  background: var(--muted-foreground, #A0A0A0);
                 }
-                /* For Firefox */
                 .custom-scrollbar {
                   scrollbar-width: thin;
-                  scrollbar-color: var(--color-border, #333333) transparent;
+                  scrollbar-color: var(--border, #333333) transparent;
                 }
 
                 .btn { padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 600; transition: all 0.2s ease-in-out; display: inline-flex; align-items: center; justify-content: center; line-height: 1.25; border: 1px solid transparent; }
@@ -973,8 +987,7 @@ export default function ChatPage() {
 
                 .flex-center { display: flex; align-items: center; justify-content: center; }
               `}</style>
-            </main>
-            {/* End of Scanner Page content */}
+            </div>
           </div>
         </div>
       )}
