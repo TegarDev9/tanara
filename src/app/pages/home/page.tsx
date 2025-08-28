@@ -114,8 +114,9 @@ export default function ModernGreenApp() {
 
   const newMenuItems = [
     { name: "education", icon: IconEducation, href: "/pages/education" }, // Assuming a future education page
+    { name: "backtesting", icon: OriginalGiftIcon, href: "/pages/airdrop" },
     { name: "jurnal", icon: LeafIcon, href: "/pages/detail" }, // Link to the new detail page
-    { name: "Airdrop", icon: OriginalGiftIcon, href: "/pages/airdrop" }, // Assuming a future airdrop page
+
   ];
 
   const [marketTrendData, setMarketTrendData] = useState([

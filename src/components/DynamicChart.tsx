@@ -1,26 +1,26 @@
+// components/DynamicChart.tsx
 'use client';
 
 import React, { Suspense, lazy } from 'react';
 
-// Tipe props disederhanakan
 interface ChartProps {
   symbol: string;
   timeframe: string;
 }
 
-// Menggunakan React.lazy untuk dynamic import.
-// Path './Chart' mengasumsikan file ini berada di folder yang sama dengan Chart.tsx
-const Chart = lazy(() => 
-  import('./Chart').then(module => ({ default: module.TradingChart }))
-);
+// Lazy-load named export TradingChart to keep the bundle lean.
+const Chart = lazy(async () => import('./Chart').then((m) => ({ default: m.TradingChart })));
 
-const DynamicChart: React.FC<ChartProps> = ({ symbol, timeframe }) => {
+export default function DynamicChart({ symbol, timeframe }: ChartProps): JSX.Element {
   return (
-    // Suspense diperlukan untuk menampilkan fallback UI saat komponen lazy sedang dimuat.
-    <Suspense fallback={<div className="flex items-center justify-center h-full">Memuat Chart...</div>}>
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center h-full text-white/70 text-sm">
+          Memuat Chart...
+        </div>
+      }
+    >
       <Chart symbol={symbol} timeframe={timeframe} />
     </Suspense>
   );
-};
-
-export default DynamicChart;
+}

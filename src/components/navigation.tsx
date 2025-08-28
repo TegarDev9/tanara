@@ -1,16 +1,9 @@
 'use client';
-
+import React, { SVGProps} from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation'; // Hook untuk mendapatkan path URL saat ini
 
 type IconProps = { className?: string } & Record<string, unknown>;
-
-// Colors are now primarily from Tailwind theme. This object can be removed or simplified.
-// const colors = {
-//   navBackground: '#000000', // Will use theme's `bg-neutral-900` or similar
-//   iconActive: '#FFFFFF',    // Will use theme's `text-primary`
-//   iconInactive: '#A0A0A0', // Will use theme's `text-muted-foreground`
-// };
 
 // --- New Simplified SVG Icons ---
 
@@ -70,12 +63,22 @@ const IconChart = ({ className, ...props }: IconProps) => (
   </svg>
 );
 
+// --- Icon for Airdrop ---
+const OriginalGiftIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M21 11.25v8.25a1.5 1.5 0 0 1-1.5 1.5H5.25a1.5 1.5 0 0 1-1.5-1.5v-8.25M12 4.875A3.375 3.375 0 0 0 8.625 8.25H15.375A3.375 3.375 0 0 0 12 4.875Z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.875v16.5M8.25 12h7.5" />
+  </svg>
+);
+
 // Updated nav items
 const navItems = [
   { href: "/pages/home", label: "Home", icon: IconSimpleHome },
   { href: "/pages/chart", label: "chart", icon: IconChart },
   { href: "/pages/chat", label: "Chat", icon: IconChatBubble },
+  { href: "/pages/airdrop", label: "Airdrop", icon: OriginalGiftIcon },
   { href: "/pages/profile", label: "Settings", icon: IconSimpleSettings },
+
 ];
 
 export default function BottomNav() {
