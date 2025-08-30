@@ -28,6 +28,6 @@
     ],
     "types": ["node", "react"] 
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts","global.d.ts", "next.config.js"],
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts","global.d.ts", "next.config.js", "prisma/schema.prisma"],
   "exclude": ["node_modules"]
 }
