@@ -3,6 +3,15 @@ import { NextResponse, NextRequest } from 'next/server';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const YOUR_SITE_URL = process.env.YOUR_SITE_URL || 'https://t.me/Tanara_bot';
 
+// Define available models as a constant to resolve the 'Cannot find name availableModels' error.
+// This list can be expanded or fetched dynamically if needed.
+const availableModels: string[] = [
+  "google/gemini-flash-1.5",
+  "openai/gpt-4o",
+  "anthropic/claude-3-opus-20240229",
+  // Add other models supported by OpenRouter as needed
+];
+
 export async function POST(req: NextRequest) {
 
   console.log(`API route /api/llm/openrouter/generate_conten_chat hit at: ${new Date().toISOString()}`);
@@ -14,11 +23,15 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    if (!body || typeof body !== 'object' || !('prompt' in body)) {
-        console.warn('Request body is missing or prompt is not provided.');
-        return NextResponse.json({ error: 'Prompt is required in the request body' }, { status: 400 });
+    if (!body || typeof body !== 'object') {
+        console.warn('Request body is missing or invalid.');
+        return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
-    const { prompt } = body; 
+
+    // Destructure prompt and model from the request body.
+    // 'selectedModel' will resolve the 'Cannot find name selectedModel' error.
+    // The 'model' parameter in the fetch call will now use this variable.
+    const { prompt, model: selectedModel } = body;
 
     if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
       console.warn('Prompt is required but was not provided or is empty in the request body.');
@@ -26,6 +39,14 @@ export async function POST(req: NextRequest) {
     }
     
     console.log('Received prompt:', prompt);
+    console.log('Selected model:', selectedModel); // Log the selected model
+
+    // Use the selectedModel from the request body, with a default if not provided.
+    // This also addresses the 'Parameter 'model' implicitly has an 'any' type' error
+    // by ensuring 'model' is explicitly handled.
+    const modelToUse = selectedModel && typeof selectedModel === 'string' && availableModels.includes(selectedModel)
+      ? selectedModel
+      : "google/gemini-flash-1.5"; // Default model
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -36,7 +57,7 @@ export async function POST(req: NextRequest) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        "model": "google/gemini-flash-1.5",
+        "model": modelToUse, // Use the determined model
         "messages": [
           { "role": "user", "content": prompt }
         ],
