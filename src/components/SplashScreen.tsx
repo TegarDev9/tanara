@@ -1,15 +1,8 @@
+// File: components/SplashScreen.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
-
-// Replace with your actual logo component or an img tag
-const YourLogo = () => (
-  <svg className="w-24 h-24 text-primary animate-pulse" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-    {/* Example Logo Path (replace with your actual logo SVG path) */}
-    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-  </svg>
-);
 
 interface SplashScreenProps {
   onFinished: () => void;
@@ -17,48 +10,186 @@ interface SplashScreenProps {
 
 const SplashScreen: React.FC<SplashScreenProps> = ({ onFinished }) => {
   const [isVisible, setIsVisible] = useState(true);
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsVisible(false);
-    }, 2000); // Splash screen visible for 2 seconds
+    const progressInterval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 100) {
+          clearInterval(progressInterval);
+          return 100;
+        }
+        return prev + 2;
+      });
+    }, 40);
 
-    const fadeOutTimer = setTimeout(() => {
-        onFinished();
-    }, 2500); // Start fade out slightly before onFinished to allow animation
+    const hideTimer = setTimeout(() => {
+      setIsVisible(false);
+    }, 2000);
+
+    const finishTimer = setTimeout(() => {
+      onFinished();
+    }, 2500);
 
     return () => {
-        clearTimeout(timer);
-        clearTimeout(fadeOutTimer);
-    }
+      clearInterval(progressInterval);
+      clearTimeout(hideTimer);
+      clearTimeout(finishTimer);
+    };
   }, [onFinished]);
 
   return (
     <div
-      className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background transition-opacity duration-500 ease-in-out ${isVisible ? 'opacity-100' : 'opacity-0'}`}
+      className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black transition-all duration-700 ease-out ${
+        isVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
+      }`}
     >
-      <YourLogo />
-      <p className="mt-4 text-lg font-semibold text-foreground animate-fadeIn">Loading...</p>
-      
-      {/* Optional: Add a subtle loading bar or spinner */}
-      <div className="absolute bottom-16 w-3/4 max-w-xs h-2 bg-muted rounded-full overflow-hidden">
-        <div className="h-full bg-primary animate-loadingBar"></div>
+      {/* Dark background pattern */}
+      <div className="absolute inset-0 opacity-10">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.1),transparent)] animate-pulse" />
       </div>
 
+      {/* Content */}
+      <div className="relative z-10 flex flex-col items-center space-y-8">
+        {/* Logo Container */}
+        <div className="relative p-6 bg-zinc-900/50 rounded-3xl shadow-2xl border border-zinc-700/50 backdrop-blur-sm animate-in slide-in-from-top-4 fade-in">
+          <Image
+            src="/image/logo.png"
+            alt="App Logo"
+            width={80}
+            height={80}
+            className="object-contain filter brightness-0 invert hover:brightness-100 hover:invert-0 transition-all duration-500"
+            priority
+          />
+          <div className="absolute inset-0 bg-white/10 rounded-lg blur-xl animate-pulse" />
+        </div>
+
+        {/* Title */}
+        <div className="text-center space-y-2 animate-in slide-in-from-bottom-4 fade-in delay-300">
+          <h1 className="text-2xl font-bold text-white tracking-tight">
+            Trading Learning
+          </h1>
+          <p className="text-sm text-zinc-300 font-medium tracking-wide uppercase">
+            Loading Experience
+          </p>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="w-64 space-y-3 animate-in slide-in-from-bottom-4 fade-in delay-500">
+          <div className="w-full h-1 bg-zinc-700 rounded-full overflow-hidden shadow-inner">
+            <div
+              className="h-full bg-gradient-to-r from-white via-zinc-200 to-white rounded-full transition-all duration-100 ease-out shadow-sm"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <div className="flex justify-between items-center text-xs text-zinc-400 font-mono">
+            <span>Loading...</span>
+            <span>{progress}%</span>
+          </div>
+        </div>
+
+        {/* Floating Elements */}
+        <div className="absolute top-20 left-1/2 transform -translate-x-1/2">
+          <div className="w-1 h-1 bg-zinc-400 rounded-full animate-ping" />
+        </div>
+        <div className="absolute bottom-20 left-1/3">
+          <div className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce delay-1000" />
+        </div>
+        <div className="absolute bottom-32 right-1/3">
+          <div className="w-1.5 h-1.5 bg-zinc-300 rounded-full animate-pulse delay-500" />
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="absolute bottom-8 text-center animate-in fade-in delay-700">
+        <p className="text-xs text-zinc-500 font-light tracking-widest">
+          2025 • TRADING LEARNING
+        </p>
+      </div>
+
+      {/* Global Styles for Animations */}
       <style jsx global>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
+        @keyframes fade-in {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
-        .animate-fadeIn {
-          animation: fadeIn 0.8s ease-out forwards;
+        .fade-in {
+          animation: fade-in 0.8s ease-out forwards;
         }
-        @keyframes loadingBar {
-          0% { width: 0%; }
-          100% { width: 100%; }
+        @keyframes slide-in-from-top {
+          from {
+            opacity: 0;
+            transform: translateY(-20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
-        .animate-loadingBar {
-          animation: loadingBar 2s ease-in-out forwards; /* Match splash screen duration */
+        .slide-in-from-top-4 {
+          animation: slide-in-from-top 0.8s ease-out forwards;
+        }
+        @keyframes slide-in-from-bottom {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .slide-in-from-bottom-4 {
+          animation: slide-in-from-bottom 0.8s ease-out forwards;
+        }
+        @keyframes pulse {
+          0% {
+            opacity: 0.6;
+            transform: scale(0.95);
+          }
+          50% {
+            opacity: 1;
+            transform: scale(1);
+          }
+          100% {
+            opacity: 0.6;
+            transform: scale(0.95);
+          }
+        }
+        .animate-pulse {
+          animation: pulse 2s infinite ease-in-out;
+        }
+        @keyframes ping {
+          0% {
+            transform: scale(1);
+            opacity: 1;
+          }
+          75%, 100% {
+            transform: scale(2);
+            opacity: 0;
+          }
+        }
+        .animate-ping {
+          animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+        @keyframes bounce {
+          0%, 100% {
+            transform: translateY(-25%);
+            animation-timing-function: cubic-bezier(0.8, 0, 1, 1);
+          }
+          50% {
+            transform: translateY(0);
+            animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+          }
+        }
+        .animate-bounce {
+          animation: bounce 1s infinite;
         }
       `}</style>
     </div>
@@ -66,12 +197,3 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinished }) => {
 };
 
 export default SplashScreen;
-
-// Contoh jika Anda menggunakan next/image:
-// Ganti src gambar yang lama dengan path ke logo baru Anda
-// Jika logo.png sudah ada di public/image/logo.png:
-<Image src="/image/logo.png" alt="Loading" width={100} height={100} />
-
-// Atau jika Anda masih ingin menyimpannya di src/image dan mengimpornya:
-// import appLogo from '@/image/logo.png'; // Pastikan path ini benar
-// <Image src={appLogo} alt="Loading..." width={100} height={100} />
