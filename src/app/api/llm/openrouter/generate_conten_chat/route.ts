@@ -6,11 +6,40 @@ const YOUR_SITE_URL = process.env.YOUR_SITE_URL || 'https://t.me/Tanara_bot';
 // Define available models as a constant to resolve the 'Cannot find name availableModels' error.
 // This list can be expanded or fetched dynamically if needed.
 const availableModels: string[] = [
-  "google/gemini-flash-1.5",
-  "openai/gpt-4o",
-  "anthropic/claude-3-opus-20240229",
-  // Add other models supported by OpenRouter as needed
+  "agentica-org/deepcoder-14b-preview:free",
+  "deepseek/deepseek-r1-0528-qwen3-8b:free",
+  "deepseek/deepseek-r1:free",
+  "google/gemini-2.5-pro-exp-03-25:free",
+  "google/gemma-3-12b-it:free",
+  "google/gemma-3-27b-it:free",
+  "google/gemma-3-4b-it:free",
+  "google/gemma-3n-2b-it:free",
+  "google/gemma-3n-4b-it:free",
+  "google/gemma-3n-e2b-it:free",
+  "google/gemma-3n-e4b-it:free",
+  "huggingfaceh4/zephyr-7b-beta",
+  "meta-llama/llama-3.1-405b-instruct:free",
+  "meta-llama/llama-3.2-3b-instruct:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "meta-llama/llama-3.3-8b-instruct:free",
+  "meta-llama/llama-4-maverick:free",
+  "meta-llama/llama-4-scout:free",
+  "microsoft/mai-ds-r1:free",
+  "mistralai/devstral-small-2505:free",
+  "mistralai/mistral-7b-instruct:free",
+  "mistralai/mistral-small-3.2-24b:free",
+  "moonshotai/kimi-dev-72b:free",
+  "moonshotai/kimi-vl-a3b-thinking:free",
+  "nousresearch/deephermes-3-llama-3-8b-preview:free",
+  "openrouter/cypher-alpha:free",
+  "sarvamai/sarvam-m:free",
+  "tencent/hunyuan-a13b-instruct:free",
+  "tngtech/deepseek-r1t-chimera:free",
+  "tngtech/deepseek-r1t2-chimera:free",
+  "venice/uncensored:free",
+  "z-ai/glm-4.5-air:free"
 ];
+
 
 export async function POST(req: NextRequest) {
 

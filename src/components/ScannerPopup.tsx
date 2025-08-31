@@ -1,11 +1,12 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, SVGProps } from 'react';
 
-// interface ScannerAiMobileProps {
-// }
+interface ScannerAiMobileProps {
+  onClose: () => void;
+}
 
-export default function ScannerAiMobile() {
+export default function ScannerAiMobile({ onClose }: ScannerAiMobileProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -73,6 +74,19 @@ export default function ScannerAiMobile() {
     }
   };
 
+  const CloseIcon = (props: SVGProps<SVGSVGElement>) => (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+      {...props}
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  );
+
   return (
     <div className="min-h-screen bg-black text-white flex flex-col items-center justify-between relative font-sans">
       {/* TOP ICONS */}
@@ -80,6 +94,10 @@ export default function ScannerAiMobile() {
         <button className="p-2"><svg className="h-5 w-5" fill="none" stroke="white"><path d="M3 3v4"/></svg></button>
         <button className="p-2"><svg className="h-5 w-5" fill="none" stroke="white"><circle cx="12" cy="12" r="2"/></svg></button>
         <button className="p-2"><svg className="h-5 w-5" fill="none" stroke="white"><circle cx="12" cy="12" r="2"/></svg></button>
+        {/* Close button */}
+        <button onClick={onClose} className="p-2">
+          <CloseIcon className="h-5 w-5 text-white" />
+        </button>
       </div>
       {/* LABEL */}
       <div className="mt-4 text-center text-lg tracking-widest font-bold">
